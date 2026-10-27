@@ -2,7 +2,8 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#05070f">
   <title>OMNIGENESIS-Ω | 5th-Paradigm Hyper-Intelligence Command Deck</title>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -68,6 +69,67 @@
     .animate-pulse-slow {
       animation: pulse-slow 3.5s infinite ease-in-out;
     }
+
+    /* Phone layout: keep navigation compact and overflow inside each panel. */
+    *, *::before, *::after { box-sizing: border-box; }
+    main, main .grid > *, main .flex > * { min-width: 0; }
+    button, select, input, textarea { touch-action: manipulation; }
+    button:focus-visible, select:focus-visible, input:focus-visible,
+    textarea:focus-visible, a:focus-visible {
+      outline: 2px solid #22d3ee;
+      outline-offset: 3px;
+    }
+    .mobile-section-picker { display: none; }
+    .mobile-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+    .mobile-table-scroll table { min-width: 560px; }
+    #platform-connection-bar { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
+    #platform-connection-bar input { flex: 1 1 220px; min-width: 0; }
+    #platform-connection-status { overflow-wrap: anywhere; }
+    @media (max-width: 767px) {
+      body { margin: 0; padding-bottom: env(safe-area-inset-bottom); }
+      body > header {
+        padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+        backdrop-filter: blur(8px);
+      }
+      body > header > div { gap: 10px; }
+      body > header > div > div:first-child { flex: 1; min-width: 0; }
+      body > header h1 { font-size: 15px; }
+      body > header h1 + span { display: none; }
+      body > header nav { display: none; }
+      .mobile-section-picker { display: flex; flex-direction: column; gap: 4px; width: 100%; order: 3; }
+      .mobile-section-picker label { font-size: 11px; color: #94a3b8; }
+      .mobile-section-picker select {
+        width: 100%; min-width: 0; min-height: 44px; padding: 10px;
+        border: 1px solid #334155; border-radius: 10px; background: #0f172a; color: #e2e8f0;
+      }
+      main { padding: 14px max(12px, env(safe-area-inset-right)) 24px max(12px, env(safe-area-inset-left)) !important; }
+      main .glass-panel { padding: 14px; border-radius: 14px; }
+      main h2, main h3, main p, main label, main button { overflow-wrap: anywhere; }
+      main .text-\[10px\], main .text-\[11px\] { font-size: 12px; line-height: 1.5; }
+      main .text-xs { line-height: 1.5; }
+      button { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
+      header button { min-width: 44px; }
+      input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), select, textarea {
+        font-size: 16px !important; max-width: 100%; min-width: 0; min-height: 44px;
+      }
+      input[type="range"] { min-height: 44px; width: 100%; }
+      input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+      textarea { min-height: 132px; }
+      pre { max-width: 100%; overflow-x: auto; font-size: 12px !important; overscroll-behavior-x: contain; }
+      main canvas, main iframe { max-width: 100%; }
+      #canvas-wrapper { height: 260px; }
+      #platform-connection-bar { gap: 8px; padding-top: 10px; padding-bottom: 10px; }
+      #platform-connection-status { flex-basis: 100%; font-size: 12px; line-height: 1.5; }
+      .mobile-table-scroll { border-radius: 8px; }
+      .mobile-table-scroll th, .mobile-table-scroll td { padding: 10px; }
+    }
+    @media (max-width: 380px) {
+      main .grid.grid-cols-2, main .grid.grid-cols-3 { grid-template-columns: minmax(0, 1fr); }
+      #btn-step-cycle { width: 100%; justify-content: center; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    }
   </style>
 </head>
 <body class="min-h-screen bg-grid-pattern text-slate-100 flex flex-col">
@@ -93,7 +155,7 @@
       </div>
 
       <!-- Navigation Tabs -->
-      <nav class="flex flex-wrap items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+      <nav aria-label="Workspace sections" class="flex flex-wrap items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
         <button id="tab-btn-nexus" class="nav-tab px-3 py-1.5 rounded-lg text-xs font-medium transition-all bg-indigo-600 text-white shadow-sm" data-target="view-nexus">
           1. Holographic Nexus
         </button>
@@ -155,6 +217,31 @@
           20. Phase 10: Custom Ollama Small Models &amp; HuggingFace Fine-Tuning Studio (Steps 40–44)
         </button>
       </nav>
+      <div class="mobile-section-picker">
+        <label for="mobile-section-select">Workspace</label>
+        <select id="mobile-section-select" aria-label="Choose workspace section">
+          <option value="tab-btn-nexus">1. Holographic Nexus</option>
+          <option value="tab-btn-manifest">2. Code Manifestation Lab</option>
+          <option value="tab-btn-blueprint">3. 5th-Paradigm Architecture</option>
+          <option value="tab-btn-guide">4. Step-by-Step Guide</option>
+          <option value="tab-btn-factory">5. AI Model Factory</option>
+          <option value="tab-btn-frontier">6. 6-Module Frontier Lab</option>
+          <option value="tab-btn-forge">7. OmniLang-Ω &amp; App Forge</option>
+          <option value="tab-btn-prod">8. Production Ops &amp; QA</option>
+          <option value="tab-btn-models-api">9. Platform Models &amp; API Hub</option>
+          <option value="tab-btn-templates">10. 28-Template Library &amp; OS</option>
+          <option value="tab-btn-saas">11. Commercial SaaS &amp; Connectors (Steps 1–3)</option>
+          <option value="tab-btn-phase2">12. Phase 2: DAG, Quantum, Portals &amp; Pitch (Steps 4–8)</option>
+          <option value="tab-btn-phase3">13. Phase 3: Economy, Edge Rust/WASM, CI/CD &amp; ZK-ML (Steps 9–13)</option>
+          <option value="tab-btn-k8s-partners">14. Cloud/K8s Bundle &amp; Hardware Partners</option>
+          <option value="tab-btn-phase5">15. Phase 5: Post-Quantum, Science Lab, Live Telemetry &amp; SDK</option>
+          <option value="tab-btn-phase6">16. Phase 6: Sovereign Cloud Computer &amp; Smart Terminal (Steps 20–24)</option>
+          <option value="tab-btn-phase7">17. Phase 7: Computer-Use, 5D RAG, Collab Sync, JWT RBAC &amp; Repo Zip (Steps 25–29)</option>
+          <option value="tab-btn-phase8">18. Phase 8: MCP Host, Time-Travel, Red-Team, WebGPU &amp; FinOps (Steps 30–34)</option>
+          <option value="tab-btn-phase9">19. Phase 9: Real-Time WebRTC, Neuromorphic SNN, CEGIS SMT, Bio-Foundry &amp; DAO (Steps 35–39)</option>
+          <option value="tab-btn-phase10">20. Phase 10: Custom Ollama Small Models &amp; HuggingFace Fine-Tuning Studio (Steps 40–44)</option>
+        </select>
+      </div>
 
       <!-- Global Status Pill -->
       <div class="flex items-center gap-3">
@@ -167,13 +254,13 @@
           <span id="header-omega" class="text-cyan-300 font-semibold">1.428</span>
           <span class="text-slate-600">|</span>
           <span class="text-slate-400">BACKEND:</span>
-          <span id="header-backend-mode" class="text-emerald-300 font-semibold">SYNCED (76 APIs)</span>
+          <span id="header-backend-mode" class="text-emerald-300 font-semibold">CONNECTING</span>
         </div>
-        <button id="btn-sync-backend" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-xs text-emerald-300 mono flex items-center gap-1.5 transition" title="Sync Full-Stack State with Python Backend">
+        <button id="btn-sync-backend" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-xs text-emerald-300 mono flex items-center gap-1.5 transition" aria-label="Sync backend" title="Sync Full-Stack State with Python Backend">
           <span>⇄</span>
           <span class="hidden sm:inline">Sync Backend</span>
         </button>
-        <button id="btn-audio-toggle" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1.5 transition" title="Toggle Harmonic Audio Feedback">
+        <button id="btn-audio-toggle" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1.5 transition" aria-label="Toggle audio feedback" title="Toggle Harmonic Audio Feedback">
           <span id="audio-icon">🔇</span>
           <span id="audio-label" class="hidden sm:inline">Synth Mute</span>
         </button>
@@ -474,7 +561,7 @@
             </div>
 
             <div class="overflow-x-auto rounded-xl border border-slate-800">
-              <table class="w-full text-left border-collapse text-xs">
+              <div class="mobile-table-scroll" role="region" aria-label="Scrollable data table" tabindex="0"><table class="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr class="bg-slate-900/90 text-slate-400 border-b border-slate-800 mono text-[11px]">
                     <th class="py-2.5 px-3">Operator Signature</th>
@@ -485,7 +572,7 @@
                 </thead>
                 <tbody id="operator-registry-tbody" class="divide-y divide-slate-800/70 bg-slate-950/60 mono">
                 </tbody>
-              </table>
+              </table></div>
             </div>
           </div>
 
@@ -556,7 +643,7 @@
 
         <!-- Comparison Table -->
         <div class="overflow-x-auto rounded-xl border border-slate-800">
-          <table class="w-full text-left border-collapse text-xs">
+          <div class="mobile-table-scroll" role="region" aria-label="Scrollable data table" tabindex="0"><table class="w-full text-left border-collapse text-xs">
             <thead>
               <tr class="bg-slate-900 text-slate-300 border-b border-slate-800">
                 <th class="py-3 px-4">Architectural Dimension</th>
@@ -591,7 +678,7 @@
                 <td class="py-2.5 px-4 text-amber-300 font-medium">Recursive Ω-Loop with Lyapunov stability proofs</td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
     </section>
@@ -1211,7 +1298,7 @@ python3 omnigenesis_engine.py --cycles 4 --json > telemetry.json</pre>
               <span id="selftest-summary-text" class="text-xs text-emerald-400 mono font-semibold">ALL CHECKS PASSING (100%)</span>
             </div>
             <div class="overflow-x-auto rounded-xl border border-slate-800">
-              <table class="w-full text-left border-collapse text-xs">
+              <div class="mobile-table-scroll" role="region" aria-label="Scrollable data table" tabindex="0"><table class="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr class="bg-slate-900 text-slate-400 border-b border-slate-800 mono text-[11px]">
                     <th class="py-2 px-3">Subsystem / Module</th>
@@ -1221,7 +1308,7 @@ python3 omnigenesis_engine.py --cycles 4 --json > telemetry.json</pre>
                 </thead>
                 <tbody id="prod-selftest-tbody" class="divide-y divide-slate-800/70 bg-slate-950/60 mono text-[11px]">
                 </tbody>
-              </table>
+              </table></div>
             </div>
           </div>
 
@@ -1378,10 +1465,9 @@ curl -X POST http://localhost:8080/api/compile-omni \
                   </select>
                 </div>
                 <div>
-                  <label class="block text-[10px] text-slate-400 mono mb-1">Generated Bearer API Key</label>
+                  <label class="block text-[10px] text-slate-400 mono mb-1">Bearer API Key</label>
                   <div class="flex gap-1.5">
-                    <input id="api-key-display" type="text" readonly value="sk-omni-5th-9948a7f2c10e4b82" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 mono outline-none">
-                    <button id="btn-rotate-api-key" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 mono transition" title="Generate New Key">↻</button>
+                    <input id="api-key-display" type="password" value="" placeholder="Enter configured API key" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 mono outline-none">
                   </div>
                 </div>
               </div>
@@ -1797,7 +1883,7 @@ curl -X POST http://localhost:8080/api/compile-omni \
               <div>
                 <div class="text-[11px] font-semibold text-slate-300 mono mb-1.5">Active Commercial Wedge Deals (SQLite Synced):</div>
                 <div class="overflow-x-auto rounded-lg border border-slate-800">
-                  <table class="w-full text-left border-collapse text-[11px] mono">
+                  <div class="mobile-table-scroll" role="region" aria-label="Scrollable data table" tabindex="0"><table class="w-full text-left border-collapse text-[11px] mono">
                     <thead>
                       <tr class="bg-slate-900 text-slate-400 border-b border-slate-800">
                         <th class="py-2 px-2.5">Company &amp; Tenant</th>
@@ -1809,7 +1895,7 @@ curl -X POST http://localhost:8080/api/compile-omni \
                     </thead>
                     <tbody id="wedge-deals-tbody" class="divide-y divide-slate-800/70 bg-slate-950/60">
                     </tbody>
-                  </table>
+                  </table></div>
                 </div>
               </div>
 
@@ -1888,7 +1974,7 @@ curl -X POST http://localhost:8080/api/compile-omni \
             </div>
 
             <div class="overflow-x-auto rounded-lg border border-slate-800">
-              <table class="w-full text-left border-collapse text-[11px] mono">
+              <div class="mobile-table-scroll" role="region" aria-label="Scrollable data table" tabindex="0"><table class="w-full text-left border-collapse text-[11px] mono">
                 <thead>
                   <tr class="bg-slate-900 text-slate-400 border-b border-slate-800">
                     <th class="py-2 px-2.5">Organization</th>
@@ -1900,7 +1986,7 @@ curl -X POST http://localhost:8080/api/compile-omni \
                 </thead>
                 <tbody id="saas-tenants-tbody" class="divide-y divide-slate-800/70 bg-slate-950/60">
                 </tbody>
-              </table>
+              </table></div>
             </div>
           </div>
 
@@ -1922,7 +2008,6 @@ WORKDIR /app
 COPY omnigenesis_engine.py /app/omnigenesis_engine.py
 COPY omnigenesis_dashboard.html /app/omnigenesis_dashboard.html
 ENV PORT=8080
-ENV STRIPE_WEBHOOK_SECRET=whsec_omni_prod_secret_key
 EXPOSE 8080
 CMD ["python3", "omnigenesis_engine.py", "--serve", "--port", "8080"]
 
@@ -3828,12 +3913,13 @@ function evaluateOperator(x1, x2) {
       state.operators.slice().reverse().forEach((op) => {
         const tr = document.createElement("tr");
         tr.className = "hover:bg-slate-900/60 transition";
-        tr.innerHTML = `
-          <td class="py-2 px-3 text-cyan-300 font-medium">${op.sig}</td>
-          <td class="py-2 px-3 text-slate-300">${op.domain}</td>
-          <td class="py-2 px-3 text-slate-400">${op.hash}</td>
-          <td class="py-2 px-3 text-right text-emerald-400 font-semibold">${op.eigen.toFixed(4)}</td>
-        `;
+        for (const [value, color] of [[op.sig, "text-cyan-300"], [op.domain, "text-slate-300"],
+          [op.hash, "text-slate-400"], [Number(op.eigen).toFixed(4), "text-emerald-400"]]) {
+          const cell = document.createElement("td");
+          cell.className = `py-2 px-3 ${color}`;
+          cell.textContent = value;
+          tr.appendChild(cell);
+        }
         tbody.appendChild(tr);
       });
     }
@@ -3852,66 +3938,32 @@ function evaluateOperator(x1, x2) {
       document.getElementById("cycle-badge").textContent = `Cycle 0${state.cycle}`;
     }
 
-    function runConvergenceCycle() {
-      state.cycle += 1;
-      const canvas = document.getElementById("omni-canvas");
-      const w = canvas ? canvas.width : 600;
-      const h = canvas ? canvas.height : 360;
-
-      // 1. Manifest a new operator
-      const hash = Math.random().toString(16).substring(2, 10) + Math.floor(1000 + Math.random() * 8999);
-      const eigen = +(0.88 + Math.random() * 0.35 + state.cycle * 0.06).toFixed(4);
-      const opSig = `emergent_eigen_solver_c${state.cycle}(entropy, coh)`;
-      state.operators.push({
-        sig: opSig,
-        domain: `Cycle-${state.cycle} Emergent Topology`,
-        hash,
-        eigen
-      });
-
-      // 2. Spawn a new fused node in the spatial canvas
-      const angle = (state.cycle * 1.35) % (Math.PI * 2);
-      const dist = 75 + (state.cycle % 3) * 32;
-      const newNode = {
-        id: `Ω-HyperMind-G${state.cycle}`,
-        label: `HyperMind-G${state.cycle}`,
-        pillar: state.cycle % 2 === 0 ? "asi" : "genai",
-        color: state.cycle % 2 === 0 ? "#34d399" : "#22d3ee",
-        x: w / 2 + Math.cos(angle) * dist,
-        y: h / 2 + Math.sin(angle) * dist,
-        vx: (Math.random() - 0.5) * 0.7,
-        vy: (Math.random() - 0.5) * 0.7,
-        radius: 10 + (state.cycle % 4),
-        desc: `Cycle-${state.cycle} Fused Hyper-Agent & Manifested Operator [AST Hash: ${hash.slice(0, 8)}].`
-      };
-      if (state.nodes.length < 18) {
-        state.nodes.push(newNode);
-      }
-
-      // Emit wavefront pulse
-      state.pulses.push({ x: w / 2, y: h / 2, r: 12, maxR: Math.max(w, h) * 0.55, alpha: 0.9, color: "#e879f9" });
-
-      // Update numerical state
-      state.compressionGain = +(state.compressionGain * (1 + 0.09 * state.mutationRate)).toFixed(2);
-      state.collectiveIQ += 142 + Math.round(state.isomorphismCoupling * 85);
-      state.omegaIndex = +(state.omegaIndex + 0.24 * state.isomorphismCoupling).toFixed(3);
-      state.lyapunovStability = Math.min(0.9999, Math.max(0.985, state.lyapunovDamping * 0.999 + 0.008));
-
-      const item = breakthroughLibrary[(state.cycle - 1) % breakthroughLibrary.length];
-      const missionGoal = document.getElementById("mission-input").value.trim() || "Universal Emergent Optimization";
-
-      document.getElementById("out-operator").textContent = `${opSig} [AST: ${hash.slice(0, 8)}] -> Eigen=${eigen}`;
-      document.getElementById("out-bridge").textContent = `${item.bridge} (Sim = ${(0.982 + (state.cycle % 15) * 0.001).toFixed(4)})`;
-      document.getElementById("out-hypermind").textContent = `Ω-HyperMind-G${state.cycle + 1} [${item.archetype}] • IQ Index: ${state.collectiveIQ.toLocaleString()}`;
-      document.getElementById("out-breakthrough").textContent = `Mission ["${missionGoal.slice(0, 52)}..."]: ${item.text}`;
-
+    function applyServerState(snapshot) {
+      if (!snapshot || !snapshot.meta_weights) return;
+      state.cycle = snapshot.cycle;
+      state.omegaIndex = snapshot.meta_weights.emergent_omega_quotient;
+      state.lyapunovStability = snapshot.meta_weights.alignment_lyapunov_stability;
+      state.compressionGain = snapshot.meta_weights.recursive_compression_gain;
+      state.collectiveIQ = snapshot.collective_iq;
+      state.operators = snapshot.operators;
       updateDashboardMetrics();
       renderOperatorRegistry();
-      appendTelemetryLog(
-        `CYCLE 0${state.cycle}: Manifested ${opSig} | Fused Ω-HyperMind-G${state.cycle + 1} | Ω-Index=${state.omegaIndex}`,
-        "text-cyan-300"
-      );
-      playHarmonicTone(320 + state.cycle * 45, 0.22);
+    }
+
+    async function runConvergenceCycle() {
+      if (!window.OmniBackendClient || state.cyclePending) return;
+      state.cyclePending = true;
+      try {
+        const res = await window.OmniBackendClient.request("POST", "/api/converge", {
+          goal: document.getElementById("mission-input").value.trim()
+        });
+        if (res.ok) {
+          applyServerState(res.data.state);
+          appendTelemetryLog(`Server completed cycle ${state.cycle}`, "text-cyan-300");
+        } else if (state.autoRunning) {
+          document.getElementById("btn-auto-run").click();
+        }
+      } finally { state.cyclePending = false; }
     }
 
     // Canvas Animation Loop
@@ -4077,6 +4129,11 @@ function evaluateOperator(x1, x2) {
       appendTelemetryLog("OMNIGENESIS-Ω Kernel initialized. 4 Pillars bound into 5th-Paradigm Fabric.", "text-emerald-400");
       appendTelemetryLog("Lyapunov Alignment Stability verified at 99.84% across all active manifolds.", "text-slate-300");
 
+      const mobileSectionSelect = document.getElementById("mobile-section-select");
+      mobileSectionSelect.addEventListener("change", () => {
+        document.getElementById(mobileSectionSelect.value)?.click();
+      });
+
       // Navigation Tabs (Preserves custom semantic border/accent classes on Tabs 4-16)
       document.querySelectorAll(".nav-tab").forEach((b) => {
         if (b.id === "tab-btn-nexus") {
@@ -4088,6 +4145,7 @@ function evaluateOperator(x1, x2) {
       document.querySelectorAll(".nav-tab").forEach((btn) => {
         btn.addEventListener("click", () => {
           const targetId = btn.getAttribute("data-target");
+          mobileSectionSelect.value = btn.id;
           ["view-nexus", "view-manifest", "view-blueprint", "view-guide", "view-factory", "view-frontier", "view-forge", "view-prod", "view-models-api", "view-templates", "view-saas", "view-phase2", "view-phase3", "view-k8s-partners", "view-phase5", "view-phase6", "view-phase7", "view-phase8", "view-phase9", "view-phase10"].forEach((id) => {
             const el = document.getElementById(id);
             if (el) el.classList.toggle("hidden", id !== targetId);
@@ -4134,23 +4192,10 @@ function evaluateOperator(x1, x2) {
       });
 
       // Reset Simulation
-      document.getElementById("btn-reset-sim").addEventListener("click", () => {
-        if (state.autoRunning) {
-          clearInterval(state.autoTimer);
-          state.autoRunning = false;
-          document.getElementById("auto-run-icon").textContent = "▶";
-          document.getElementById("auto-run-text").textContent = "Auto-Evolve";
-        }
-        state.cycle = 1;
-        state.omegaIndex = 1.428;
-        state.compressionGain = 1.38;
-        state.collectiveIQ = 1148;
-        state.operators = state.operators.slice(0, 4);
-        const canvas = document.getElementById("omni-canvas");
-        initNodes(canvas.width, canvas.height);
-        updateDashboardMetrics();
-        renderOperatorRegistry();
-        appendTelemetryLog("System state reset to Cycle 01 baseline.", "text-amber-300");
+      document.getElementById("btn-reset-sim").addEventListener("click", async () => {
+        if (state.autoRunning) document.getElementById("btn-auto-run").click();
+        const res = await OmniBackendClient.request("POST", "/api/reset", {});
+        if (res.ok) applyServerState(res.data);
       });
 
       // Canvas Action Buttons
@@ -5131,95 +5176,29 @@ ${ast.proofs.map((p, i) => `ALTER TABLE manifold_${ast.entityName.toLowerCase()}
       // =====================================================================
       // VIEW 8: PRODUCTION OPS, 12-POINT SELF-TEST & STATE PERSISTENCE
       // =====================================================================
-      function runProductionSelfTestSuite() {
-        const checks = [
-          { name: "01. Pillar 1: M-GenAI AST Sandbox", assertion: `Blocks unsafe tokens & compiles ${state.operators.length} pure math operators`, status: "PASS (0.2ms)" },
-          { name: "02. Pillar 2: AGI Isomorphic Graph", assertion: "5D cosine similarity >= 0.90 across domain seeds", status: "PASS (0.1ms)" },
-          { name: "03. Pillar 3: ASI Pareto Swarm Fusion", assertion: `Active Collective IQ = ${state.collectiveIQ.toLocaleString()} (> 1,000 baseline)`, status: "PASS (0.1ms)" },
-          { name: "04. Pillar 4: Lyapunov Stability Guard", assertion: `Stability = ${(state.lyapunovStability * 100).toFixed(2)}% (>= 98.5% threshold)`, status: "PASS (0.1ms)" },
-          { name: "05. 5th-Paradigm Synergy Coupling", assertion: `Non-linear Ω-Index = ${state.omegaIndex.toFixed(3)} (> linear sum)`, status: "PASS (0.1ms)" },
-          { name: "06. AI Model Factory (Surrogate + RLVR)", assertion: "JSONL exporter & gradient descent trainer verified", status: "PASS (0.3ms)" },
-          { name: "07. Mod 1: Embodied Hamiltonian Lattice", assertion: `Energy H = ${latticeState.energy} eV, Damping = ${latticeState.damping}%`, status: "PASS (0.2ms)" },
-          { name: "08. Mod 2: Formal Lean-4 / SMT Prover", assertion: "Interval arithmetic & division-by-zero checks active", status: "PASS (0.2ms)" },
-          { name: "09. Mod 3: Episodic Hyper-Graph Vault", assertion: `${memoryVault.length} snapshots committed in vault`, status: "PASS (0.1ms)" },
-          { name: "10. Mod 4 & 5: Neural Bridge & Sensor FFT", assertion: "RFFT spectral Shannon entropy & dynamic AST binder ready", status: "PASS (0.2ms)" },
-          { name: "11. Mod 6: P2P Merkle Proof-of-Utility", assertion: `Block #0${p2pBlock} BFT quorum consensus verified`, status: "PASS (0.1ms)" },
-          { name: "12. OMNILANG-Ω (.omni) Compiler & Runtime", assertion: `Compiled ontology '${forgeState.parsedAst ? forgeState.parsedAst.appName : "QuantumBiotechStudio"}' -> JS + Python + SQL`, status: "PASS (0.4ms)" },
-          { name: "13. Production SQLite3 ACID Storage", assertion: "Thread-safe RLock + WAL persistence across 4 SQLite databases", status: "PASS (0.2ms)" },
-          { name: "14. Platform & Distilled AI Models Hub", assertion: "4 Native Foundation Models + Custom Distilled API Spawner", status: "PASS (0.2ms)" },
-          { name: "15. Dynamic Arity & NaN/Inf Safety Guard", assertion: "Auto-pads positional args & clamps NaN/Inf edge cases", status: "PASS (0.1ms)" },
-          { name: "16. Enterprise 28-Template Library", assertion: "8 Business, 8 Content, 8 Workflow, 4 Hybrid OS + 10 Pillars", status: "PASS (0.2ms)" },
-          { name: "17. Flagship 1: Lead-to-Client Pipeline", assertion: "10-step CRM qualification, consent check & approval gate", status: "PASS (0.2ms)" },
-          { name: "18. Flagship 2: Omni Repurposing Engine", assertion: "1 source asset -> 7 synchronized channel formats + citations", status: "PASS (0.2ms)" },
-          { name: "19. Flagship 3: Document Intake Pipeline", assertion: "8-step typed schema extraction & 0.90 confidence gate", status: "PASS (0.2ms)" },
-          { name: "20. Step 1-3: Commercial SaaS & Billing", assertion: "Multi-tenant RBAC, credit metering & Stripe HMAC webhook", status: "PASS (0.3ms)" },
-          { name: "21. Step 4: Visual DAG Workflow Engine", assertion: "6-node typed DAG topological sort & human checkpoint gate", status: "PASS (0.2ms)" },
-          { name: "22. Step 5: OpenQASM 3.0 Quantum Transpiler", assertion: "4-qubit topological braid + Qiskit 1.x & PennyLane QML", status: "PASS (0.3ms)" },
-          { name: "23. Step 6: White-Label Portal Generator", assertion: "Tenant-isolated branded HTML5 portal exporter", status: "PASS (0.2ms)" },
-          { name: "24. Step 7: Ollama, LoRA & OpenAPI 3.1", assertion: "Local Modelfile, PEFT/TRL trainer & OpenAPI 3.1.0 spec", status: "PASS (0.2ms)" },
-          { name: "25. Step 8: Valuation & Investor Pitch Model", assertion: "ARR-to-Enterprise-Valuation simulator & brief exporter", status: "PASS (0.1ms)" },
-          { name: "26. Step 9: Agent Economy & Smart Treasury", assertion: "70/20/10 Proof-of-Utility royalty split & Lyapunov slashing", status: "PASS (0.2ms)" },
-          { name: "27. Step 10: Bare-Metal Edge Transpiler", assertion: "Zero-heap #![no_std] Rust, WAT & MISRA-C99 (0.118ms WCET)", status: "PASS (0.2ms)" },
-          { name: "28. Step 11: Self-Healing CI/CD AST Agent", assertion: "Multi-module AST patch synthesis & Lean-4 equivalence diff", status: "PASS (0.3ms)" },
-          { name: "29. Step 12: Groth16 ZK-ML Privacy Prover", assertion: "BN254 zero-knowledge proof + Ed25519 receipt (0 bytes exposed)", status: "PASS (0.3ms)" },
-          { name: "30. Step 13: 8-Slide Boardroom Pitch Deck", assertion: "Series-A narrative & 5-year ARR trajectory synchronizer", status: "PASS (0.1ms)" },
-          { name: "31. Real 16x16 Unitary Quantum Statevector", assertion: "Complex C^16 unitary evolution & SVD Von Neumann entropy", status: "PASS (0.4ms)" },
-          { name: "32. Real GCC -O3 ELF Shared Object & FFI", assertion: "Native x86_64 shared library compilation & ctypes execution", status: "PASS (0.5ms)" },
-          { name: "33. Real WebAssembly VM & WebCrypto ECDSA", assertion: "IEEE-754 .wasm binary execution + NIST P-256 signature", status: "PASS (0.4ms)" },
-          { name: "34. Step 14: Cloud K8s, Helm & Partners", assertion: "NVIDIA, AWS, Azure/IBM, Siemens co-sell + K8s/Terraform", status: "PASS (0.2ms)" },
-          { name: "35. Step 15: NIST ML-KEM Lattice PQC", assertion: "Cyclotomic ring Z_3329[X]/(X^64+1) key encapsulation (0 errors)", status: "PASS (0.3ms)" },
-          { name: "36. Step 16: Autonomous Science & Tc Lab", assertion: "3D Lennard-Jones force relaxation & two-factor Allen-Dynes Tc", status: "PASS (0.4ms)" },
-          { name: "37. Step 17: Prometheus /metrics & SSE Bus", assertion: "OpenMetrics v0.0.4 gauges & real-time Server-Sent Events", status: "PASS (0.2ms)" },
-          { name: "38. Step 18-19: Python SDK & 90-Day GTM", assertion: "omnigenesis-sdk client + Ed25519 signed pilot contract", status: "PASS (0.2ms)" },
-          { name: "39. Step 20-24: Sovereign Cloud & OmniShell", assertion: "Universal PaaS self-deployer, PQC mesh & bare-metal bootstrap", status: "PASS (0.3ms)" },
-          { name: "40. Unified Full-Stack Backend API Router", assertion: "52 REST/SSE/Prometheus routes + CORS OPTIONS & live sync", status: "PASS (0.2ms)" },
-          { name: "41. Step 25: Autonomous Computer-Use Engine", assertion: "DOM/Accessibility-Tree parser + Lyapunov gate & Ed25519 receipt", status: "PASS (0.3ms)" },
-          { name: "42. Step 26: Multi-Operator CRDT Sync Bus", assertion: "Causal Vector Clock + LWW-Element-Set zero-conflict merge", status: "PASS (0.1ms)" },
-          { name: "43. Step 27: Persistent 5D Vector-Graph RAG", assertion: "SQLite chunk vault + hybrid 5D cosine & lexical citation search", status: "PASS (0.3ms)" },
-          { name: "44. Step 28: Sovereign JWT RBAC & Stripe Portal", assertion: "Dual HS256+Ed25519 JWT token authority & Stripe checkout session", status: "PASS (0.2ms)" },
-          { name: "45. Step 29: Full-Stack Repository ZIP Exporter", assertion: "13-file deployable repo archive (Engine, HTML, SDK, Docker, K8s)", status: "PASS (0.4ms)" },
-          { name: "46. Live HTTP Phase-7 End-to-End Verification", assertion: "/v1/computer-use/actuate, /v1/knowledge/query & /v1/auth/token", status: "PASS (0.3ms)" },
-          { name: "47. Step 30: MCP JSON-RPC 2.0 Tool & Resource Host", assertion: "5 standardized tools + 3 omni:// resources & Ed25519 receipts", status: "PASS (0.2ms)" },
-          { name: "48. Step 31: Time-Travel Causal Replay & Forking", assertion: "Merkle-chained state snapshots & counterfactual Ω-delta forks", status: "PASS (0.2ms)" },
-          { name: "49. Step 32: Adversarial Red-Team & Chaos Arena", assertion: "5/5 AST escape, NaN, Sybil BFT, SSRF & PQC probes neutralized", status: "PASS (0.3ms)" },
-          { name: "50. Step 33: WebGPU / WGSL Compute Shader Transpiler", assertion: "@compute @workgroup_size(64) shader & 148.6 GFLOPS tensor sim", status: "PASS (0.2ms)" },
-          { name: "51. Step 34: FinOps & Carbon-Aware Pareto Router", assertion: ">90% cost & CO2 reduction across edge surrogate & hydro GPU", status: "PASS (0.2ms)" },
-          { name: "52. Live HTTP Phase-8 End-to-End Verification", assertion: "/v1/mcp/rpc, /v1/replay/fork, /v1/redteam/campaign & /v1/finops/route", status: "PASS (0.3ms)" },
-          { name: "53. Step 35: Real-Time WebRTC Voice & Vision Bridge", assertion: "RFC 8866 SDP/ICE + 16kHz PCM prosody & 1080p scene 5D vector", status: "PASS (0.2ms)" },
-          { name: "54. Step 36: Neuromorphic LIF + STDP SNN Compiler", assertion: "0.23 pJ/SynOp spike train & -99.94% energy vs dense GPU", status: "PASS (0.2ms)" },
-          { name: "55. Step 37: Symbolic SMT / Z3 CEGIS Synthesizer", assertion: "Counterexample-guided loop -> 0 counterexamples (UNSAT proof)", status: "PASS (0.3ms)" },
-          { name: "56. Step 38: Autonomous Bio-Foundry & Opentrons OT-2", assertion: "GC homeostasis, ΔG folding energy & BSL-1 robotic protocol", status: "PASS (0.2ms)" },
-          { name: "57. Step 39: Constitutional Quadratic Governance DAO", assertion: "v_eff = sqrt(credits)*rep + Axiom-01 Lyapunov floor veto", status: "PASS (0.2ms)" },
-          { name: "58. Live HTTP Phase-9 End-to-End Verification", assertion: "/v1/realtime/frame, /v1/neuromorphic/simulate, /v1/cegis/synthesize & /v1/governance/vote", status: "PASS (0.3ms)" },
-          { name: "59. Step 40: 5-Model Ollama Modelfile Architect", assertion: "Ultra-Light (1.5B-3B) & Balanced (1.5B-7B) Modelfiles + build script", status: "PASS (0.2ms)" },
-          { name: "60. Step 41: 5-Model Ollama Swarm Router", assertion: "Sequential M-GenAI -> AGI -> ASI -> Prover -> Omega pipeline + Ed25519", status: "PASS (0.3ms)" },
-          { name: "61. Step 42: HuggingFace 4-Bit QLoRA SFT Pipeline", assertion: "PEFT LoraConfig (r=32, alpha=64) + SFTTrainer & multi-pillar JSONL", status: "PASS (0.2ms)" },
-          { name: "62. Step 43: HuggingFace TRL GRPO Verifiable Reward", assertion: "Deterministic AST (40%) + Lyapunov (30%) + 5D Vector (30%) scorer", status: "PASS (0.2ms)" },
-          { name: "63. Step 44: HF LoRA Merge, Hub Push & GGUF Exporter", assertion: "merge_and_unload() + Q4_K_M GGUF -> Ollama Modelfile binding", status: "PASS (0.2ms)" },
-          { name: "64. Live HTTP Phase-10 End-to-End Verification", assertion: "/v1/ollama/modelfiles, /v1/ollama/swarm-infer & /v1/huggingface/grpo-reward", status: "PASS (0.3ms)" }
-        ];
-
+      async function runProductionSelfTestSuite() {
+        const summary = document.getElementById("selftest-summary-text");
+        summary.textContent = "Running server verification suite…";
+        const res = await OmniBackendClient.request("GET", "/api/self-test");
         const tbody = document.getElementById("prod-selftest-tbody");
-        if (!tbody) return;
-        tbody.innerHTML = checks.map((c) => `
-          <tr class="hover:bg-slate-900/60 transition">
-            <td class="py-2 px-3 text-cyan-300 font-semibold">${c.name}</td>
-            <td class="py-2 px-3 text-slate-300">${c.assertion}</td>
-            <td class="py-2 px-3 text-right text-emerald-400 font-bold">✓ ${c.status}</td>
-          </tr>
-        `).join("");
-
-        document.getElementById("selftest-summary-text").textContent =
-          `ALL ${checks.length} FULL-STACK PRODUCTION CHECKS PASSED (100%) @ ${new Date().toLocaleTimeString()}`;
+        tbody.replaceChildren();
+        for (const check of res.data.checks || []) {
+          const row = document.createElement("tr");
+          for (const value of [check.check, "Server verification", check.status]) {
+            const cell = document.createElement("td");
+            cell.className = "py-2 px-3 text-slate-300";
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          tbody.appendChild(row);
+        }
+        summary.textContent = res.ok && res.data.all_passed
+          ? `${res.data.total_checks} server checks passed`
+          : `Verification failed: ${res.data.error || "Unknown error"}`;
       }
-
-      runProductionSelfTestSuite();
-
-      document.getElementById("btn-run-prod-selftest").addEventListener("click", () => {
-        runProductionSelfTestSuite();
-        appendTelemetryLog("PRODUCTION QA: All 12 subsystem verification checks PASSED (100%).", "text-emerald-400 font-semibold");
-        playHarmonicTone(660, 0.18);
-      });
+      document.getElementById("selftest-summary-text").textContent = "Not run. Connect with an admin key, then run verification.";
+      document.getElementById("prod-selftest-tbody").replaceChildren();
+      document.getElementById("btn-run-prod-selftest").addEventListener("click", runProductionSelfTestSuite);
 
       document.getElementById("btn-export-full-state").addEventListener("click", () => {
         const snapshot = {
@@ -5449,109 +5428,31 @@ ${ast.proofs.map((p, i) => `ALTER TABLE manifold_${ast.entityName.toLowerCase()}
         });
       }
 
-      function executeLiveModelApiCall() {
-        const mod = getSelectedModel();
+      async function executeLiveModelApiCall() {
         const route = document.getElementById("api-route-select").value;
+        if (!["/v1/chat/completions", "/v1/models/infer", "/v1/embeddings/isomorphic", "/v1/omnilang/synthesize"].includes(route)) return;
         const resBox = document.getElementById("api-response-box");
-        const titleEl = document.getElementById("api-response-title");
-        const latEl = document.getElementById("api-latency-badge");
-        if (!resBox) return;
-
-        let parsedReq = {};
+        let payload;
         try {
-          parsedReq = JSON.parse(document.getElementById("api-request-body").value || "{}");
-        } catch (e) {
-          parsedReq = { raw_input: "custom_query" };
+          payload = JSON.parse(document.getElementById("api-request-body").value || "{}");
+        } catch (error) {
+          resBox.textContent = "Invalid JSON: " + error.message;
+          return;
         }
-
-        const latestOp = state.operators[state.operators.length - 1] || state.operators[0];
-        const eigenVal = +(mod.omegaScore * 0.42 + state.omegaIndex * 0.31).toFixed(6);
-        const latencyMs = (1.1 + Math.random() * 1.4).toFixed(2);
-        if (titleEl) titleEl.textContent = `LIVE RESPONSE FROM [${mod.id}] (${route})`;
-        if (latEl) latEl.textContent = `Latency: ${latencyMs} ms | HTTP 200 OK`;
-
-        let responsePayload = {};
-        if (route === "/v1/chat/completions") {
-          responsePayload = {
-            id: `chatcmpl-omni-${Math.random().toString(16).slice(2, 10)}`,
-            object: "chat.completion",
-            created: Math.floor(Date.now() / 1000),
-            model: mod.id,
-            Origin: mod.origin,
-            choices: [
-              {
-                index: 0,
-                message: {
-                  role: "assistant",
-                  content: `Synthesized 5th-Paradigm solution using operator '${latestOp.sig}' [AST Hash: ${latestOp.hash}]. Cross-domain isomorphism locked at Sim=0.9995 with Eigenvalue=${eigenVal}.`,
-                  manifested_operator: latestOp.sig,
-                  lean4_proof_status: "Q.E.D._VERIFIED"
-                },
-                finish_reason: "stop"
-              }
-            ],
-            usage: { prompt_tokens: 48, completion_tokens: 64, total_tokens: 112 },
-            lyapunov_alignment_stability: mod.lyapunov
-          };
-        } else if (route === "/v1/models/infer") {
-          responsePayload = {
-            model: mod.id,
-            api_route: mod.apiRoute,
-            status: "VERIFIED_INFERENCE",
-            forward_pass_eigenvalue: eigenVal,
-            synaptic_weights_applied: mod.weights,
-            active_hypermind: `Ω-HyperMind-G${state.cycle + 1}`,
-            lean4_certificate: `smt_cert_${latestOp.hash.slice(0, 8)}`,
-            lyapunov_margin: mod.lyapunov
-          };
-        } else if (route === "/v1/embeddings/isomorphic") {
-          responsePayload = {
-            object: "list",
-            model: mod.id,
-            data: [
-              {
-                object: "isomorphic_embedding",
-                index: 0,
-                structural_vector_5d: [0.954, 0.882, 0.158, 0.934, 0.912],
-                dimensions_meaning: ["conservation", "feedback_gain", "entropy_rate", "criticality", "coupling"],
-                nearest_domain_bridge: "Quantum Condensed Matter <-> Multi-Agent Game Theory (Sim=0.9995)"
-              }
-            ]
-          };
-        } else {
-          const promptStr = parsedReq.genesis_prompt || "Autonomous Quantum Platform";
-          responsePayload = {
-            model: mod.id,
-            route: "/v1/omnilang/synthesize",
-            synthesized_omnilang: generateOmniLangFromPrompt(promptStr),
-            ast_verified: true,
-            lyapunov_stability: mod.lyapunov
-          };
-        }
-
-        resBox.textContent = JSON.stringify(responsePayload, null, 2);
+        const res = await OmniBackendClient.request("POST", route, payload);
+        document.getElementById("api-response-title").textContent = `SERVER RESPONSE (${route})`;
+        document.getElementById("api-latency-badge").textContent = `HTTP ${res.status} | ${res.latencyMs} ms`;
+        resBox.textContent = JSON.stringify(res.data, null, 2);
       }
 
       renderPlatformModelsList();
       updateApiRequestTemplate();
-      executeLiveModelApiCall();
 
       document.getElementById("api-route-select").addEventListener("change", () => {
         updateApiRequestTemplate();
         executeLiveModelApiCall();
       });
 
-      document.getElementById("btn-send-api-request").addEventListener("click", () => {
-        executeLiveModelApiCall();
-        appendTelemetryLog(`API GATEWAY: Executed live inference on model '${selectedModelId}'.`, "text-cyan-300");
-        playHarmonicTone(630, 0.15);
-      });
-
-      document.getElementById("btn-rotate-api-key").addEventListener("click", () => {
-        const randHex = Math.random().toString(16).substring(2, 10) + Math.random().toString(16).substring(2, 10);
-        document.getElementById("api-key-display").value = `sk-omni-5th-${randHex}`;
-        playHarmonicTone(510, 0.1);
-      });
 
       document.getElementById("btn-show-curl-sdk").addEventListener("click", () => {
         const mod = getSelectedModel();
@@ -5579,36 +5480,23 @@ with urllib.request.urlopen(req) as resp:
     print(json.loads(resp.read().decode()))`;
       });
 
-      document.getElementById("btn-spawn-custom-model").addEventListener("click", () => {
-        const rawId = document.getElementById("custom-model-name-input").value.trim() || `omni-custom-c${state.cycle}`;
-        const cleanId = rawId.toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
-        const spec = document.getElementById("custom-model-specialty-input").value.trim() || "Custom 5th-Paradigm Distilled Model";
-
-        const newModel = {
-          id: cleanId,
-          origin: "MODEL FROM THE PLATFORM",
-          architecture: `Distilled Cycle-${state.cycle} Hyper-Mind & AST Operator Network`,
-          specialty: spec,
-          params: `${(2.4 + state.cycle * 1.2).toFixed(1)}B Autopoietic Tensor`,
-          omegaScore: +(state.omegaIndex + 1.45).toFixed(2),
-          lyapunov: state.lyapunovStability,
-          weights: [
-            +(0.45 + Math.random() * 0.4).toFixed(4),
-            +(-0.25 + Math.random() * 0.5).toFixed(4),
-            +(0.62 + Math.random() * 0.3).toFixed(4),
-            +(0.81 + Math.random() * 0.15).toFixed(4)
-          ],
-          apiRoute: `/v1/models/${cleanId}/infer`
-        };
-
-        platformModels.unshift(newModel);
-        selectedModelId = cleanId;
-        document.getElementById("active-api-model-label").textContent = `Target Model: ${selectedModelId}`;
+      document.getElementById("btn-spawn-custom-model").addEventListener("click", async () => {
+        const modelId = document.getElementById("custom-model-name-input").value.trim().toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
+        if (!modelId) return;
+        const res = await OmniBackendClient.request("POST", "/v1/models/spawn", {
+          model_id: modelId,
+          specialty: document.getElementById("custom-model-specialty-input").value.trim()
+        });
+        if (!res.ok) return;
+        const model = res.data;
+        platformModels.unshift({ id: model.model_id, origin: model.origin,
+          architecture: model.architecture, specialty: model.specialty,
+          params: model.parameters, omegaScore: model.omega_score || state.omegaIndex,
+          lyapunov: model.lyapunov_stability, weights: model.weights_w1,
+          apiRoute: `/v1/models/${model.model_id}/infer` });
+        selectedModelId = model.model_id;
         renderPlatformModelsList();
         updateApiRequestTemplate();
-        executeLiveModelApiCall();
-        appendTelemetryLog(`SPAWNED MODEL FROM PLATFORM: '${cleanId}' deployed at POST ${newModel.apiRoute}.`, "text-fuchsia-300 font-semibold");
-        playHarmonicTone(690, 0.2);
       });
 
       document.getElementById("btn-export-model-weights").addEventListener("click", () => {
@@ -8112,7 +8000,7 @@ services:
     environment:
       - PORT=8080
       - OMNIGENESIS_ENV=production
-      - STRIPE_WEBHOOK_SECRET=whsec_omni_prod_secret_key
+      - STRIPE_WEBHOOK_SECRET=\${STRIPE_WEBHOOK_SECRET:-}
     volumes:
       - omnigenesis_sqlite_data:/tmp
     healthcheck:
@@ -8884,11 +8772,12 @@ WantedBy=multi-user.target`
       // running inside an isolated preview iframe.
       // =======================================================================
       const OmniBackendClient = {
-        mode: "EMBEDDED_FULLSTACK_ENGINE",
+        mode: "DISCONNECTED",
         baseUrl: (window.location.protocol.startsWith("http") && window.location.hostname)
           ? window.location.origin
           : "http://localhost:8080",
         online: false,
+        sessionToken: null,
 
         async probeServer() {
           const candidates = [];
@@ -8905,7 +8794,7 @@ WantedBy=multi-user.target`
               clearTimeout(timer);
               if (resp && resp.ok) {
                 const data = await resp.json();
-                if (data && data.status === "ONLINE") {
+                if (data && ["ok", "ONLINE"].includes(data.status)) {
                   this.baseUrl = base;
                   this.online = true;
                   this.mode = "LIVE_PYTHON_HTTP_SERVER";
@@ -8922,11 +8811,11 @@ WantedBy=multi-user.target`
             }
           }
           this.online = false;
-          this.mode = "EMBEDDED_FULLSTACK_ENGINE";
+          this.mode = "DISCONNECTED";
           const badge = document.getElementById("header-backend-mode");
           if (badge) {
-            badge.textContent = "ACID ENGINE (76 APIs)";
-            badge.className = "text-emerald-300 font-semibold";
+            badge.textContent = "SERVER DISCONNECTED";
+            badge.className = "text-amber-300 font-semibold";
           }
           return false;
         },
@@ -8982,24 +8871,42 @@ WantedBy=multi-user.target`
                 method,
                 headers: {
                   "Content-Type": "application/json",
-                  "Authorization": `Bearer ${document.getElementById("api-key-display")?.value || "sk-omni-live"}`
+                  "Authorization": `Bearer ${this.sessionToken || document.getElementById("api-key-display")?.value.trim() || ""}`
                 }
               };
               if (payload && method !== "GET") {
                 opts.body = JSON.stringify(payload);
               }
               const resp = await window.fetch(targetUrl, opts);
-              const data = await resp.json();
-              this.persistLocalState();
+              let data;
+              const contentType = resp.headers.get("Content-Type") || "";
+              if (contentType.includes("text/event-stream")) {
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let frame = "";
+                try {
+                  while (!frame.includes("\n\n")) {
+                    const chunk = await reader.read();
+                    if (chunk.done) break;
+                    frame += decoder.decode(chunk.value, { stream: true });
+                  }
+                } finally { await reader.cancel(); }
+                data = { event: frame };
+              } else if (contentType.includes("application/json")) data = await resp.json();
+              else data = { content: await resp.text() };
+              const status = document.getElementById("platform-connection-status");
+              if (status) status.textContent = resp.ok ? `Connected • HTTP ${resp.status}` : `HTTP ${resp.status}: ${data.error || "Request failed"}`;
+              if (!resp.ok) appendTelemetryLog(`HTTP ${resp.status}: ${data.error || "Request failed"}`, "text-rose-400");
               return { ok: resp.ok, status: resp.status, latencyMs: +(performance.now() - t0).toFixed(2), mode: "LIVE_HTTP", data };
             } catch (err) {
               this.online = false;
             }
           }
-          // Embedded Full-Stack Virtual Backend Router (100% Parity with omnigenesis_engine.py)
-          const data = this.virtualRoute(method, endpoint, payload || {});
-          this.persistLocalState();
-          return { ok: true, status: 200, latencyMs: +(performance.now() - t0 + 0.85).toFixed(2), mode: "VIRTUAL_BACKEND_ACID", data };
+          this.mode = "DISCONNECTED";
+          const badge = document.getElementById("header-backend-mode");
+          if (badge) badge.textContent = "SERVER DISCONNECTED";
+          return { ok: false, status: 503, latencyMs: +(performance.now() - t0).toFixed(2),
+            mode: "DISCONNECTED", data: { error: "Cannot reach the platform server. Start it and reconnect." } };
         },
 
         virtualRoute(method, endpoint, body) {
@@ -9634,40 +9541,45 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
         });
       }
 
-      document.getElementById("btn-send-api-request")?.addEventListener("click", async () => {
-        const r = document.getElementById("api-route-select")?.value || "/v1/chat/completions";
-        if (!["/v1/chat/completions", "/v1/models/infer", "/v1/embeddings/isomorphic", "/v1/omnilang/synthesize"].includes(r)) {
-          let bodyObj = {};
-          try {
-            bodyObj = JSON.parse(document.getElementById("api-request-body")?.value || "{}");
-          } catch (e) {
-            bodyObj = {};
-          }
-          const isGet = ["/api/state", "/v1/saas/summary", "/v1/cloud/telemetry", "/api/self-test", "/v1/collab/state", "/v1/export/archive-manifest", "/v1/ollama/modelfiles"].includes(r);
-          const res = await OmniBackendClient.request(isGet ? "GET" : "POST", r, bodyObj);
-          const resBox = document.getElementById("api-response-box");
-          const titleEl = document.getElementById("api-response-title");
-          const latEl = document.getElementById("api-latency-badge");
-          if (titleEl) titleEl.textContent = `LIVE FULL-STACK BACKEND RESPONSE (${r})`;
-          if (latEl) latEl.textContent = `Latency: ${res.latencyMs} ms | Mode: ${res.mode} | HTTP ${res.status}`;
-          if (resBox) resBox.textContent = JSON.stringify(res.data, null, 2);
+      async function refreshServerRoutes() {
+        const res = await OmniBackendClient.request("GET", "/api/routes");
+        if (!res.ok) return;
+        const select = document.getElementById("api-route-select");
+        const previous = select.value;
+        select.replaceChildren();
+        for (const route of res.data.routes || []) {
+          const [method, path] = route.trim().split(/\s+/);
+          if (path === "/") continue;
+          const option = document.createElement("option");
+          option.value = path.replace("<model_id>", "omni-genesis-1-core");
+          option.dataset.method = method;
+          option.textContent = `${method} ${option.value}`;
+          select.appendChild(option);
         }
+        if ([...select.options].some(option => option.value === previous)) select.value = previous;
+      }
+
+      document.getElementById("btn-send-api-request")?.addEventListener("click", async () => {
+        const select = document.getElementById("api-route-select");
+        const route = select.value;
+        let payload;
+        try {
+          payload = JSON.parse(document.getElementById("api-request-body").value || "{}");
+        } catch (error) {
+          document.getElementById("api-response-box").textContent = `Invalid JSON: ${error.message}`;
+          return;
+        }
+        const method = select.selectedOptions[0]?.dataset.method || "POST";
+        const res = await OmniBackendClient.request(method, route, payload);
+        document.getElementById("api-response-title").textContent = `SERVER RESPONSE (${method} ${route})`;
+        document.getElementById("api-latency-badge").textContent = `HTTP ${res.status} | ${res.latencyMs} ms`;
+        document.getElementById("api-response-box").textContent = JSON.stringify(res.data, null, 2);
       });
 
       document.getElementById("btn-sync-backend")?.addEventListener("click", async () => {
-        const isLive = await OmniBackendClient.probeServer();
+        await OmniBackendClient.probeServer();
         const res = await OmniBackendClient.request("GET", "/api/state");
-        if (isLive && res.data && res.data.meta_weights) {
-          state.omegaIndex = res.data.meta_weights.emergent_omega_quotient || state.omegaIndex;
-          state.lyapunovStability = res.data.meta_weights.alignment_lyapunov_stability || state.lyapunovStability;
-          updateDashboardMetrics();
-        }
-        runProductionSelfTestSuite();
-        appendTelemetryLog(
-          `FULL-STACK BACKEND SYNC: ${OmniBackendClient.mode} verified (${res.latencyMs}ms) — 76 APIs & ACID state synchronized.`,
-          "text-emerald-400 font-bold"
-        );
-        playHarmonicTone(740, 0.18);
+        if (res.ok) applyServerState(res.data);
       });
 
       // =======================================================================
@@ -10024,22 +9936,94 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
         renderSaaSDashboard();
         renderCloudComputeCells();
       }
-      OmniBackendClient.probeServer().then(() => {
-        runStep25ComputerUse();
-        runStep27RagQuery();
-        runStep26CollabPublish();
-        runStep28IssueJwt();
-        runStep29ArchiveInspect();
-        runStep30McpRpc();
-        runStep31ReplayFork();
-        runStep32RedTeamArena();
-        runStep33WebGpuTranspile();
-        runStep34FinOpsRoute();
-        runStep35RealtimeFrame();
-        runStep36NeuromorphicSnn();
-        runStep37CegisSynthesize();
-        runStep38BioFoundryDesign();
-        runStep39GovernanceVote();
+      window.OmniBackendClient = OmniBackendClient;
+      const connectionPanel = document.createElement("div");
+      connectionPanel.id = "platform-connection-bar";
+      connectionPanel.className = "px-4 py-3 bg-slate-900 border-b border-slate-700 flex flex-wrap items-center gap-3 text-xs text-slate-300";
+      const keyInput = document.createElement("input");
+      keyInput.type = "password";
+      keyInput.spellcheck = false;
+      keyInput.setAttribute("autocapitalize", "none");
+      keyInput.placeholder = "Admin API key from Run output";
+      keyInput.setAttribute("aria-label", "Platform API key");
+      keyInput.autocomplete = "off";
+      keyInput.className = "bg-slate-950 border border-slate-700 rounded px-3 py-2";
+      const connectButton = document.createElement("button");
+      connectButton.textContent = "Connect";
+      connectButton.className = "bg-indigo-600 text-white rounded px-3 py-2";
+      const connectionStatus = document.createElement("span");
+      connectionStatus.id = "platform-connection-status";
+      connectionStatus.textContent = "Sign in with your private-beta account.";
+      const usernameInput = document.createElement("input");
+      usernameInput.placeholder = "Username";
+      usernameInput.autocomplete = "username";
+      usernameInput.setAttribute("aria-label", "Username");
+      usernameInput.setAttribute("autocapitalize", "none");
+      usernameInput.className = keyInput.className;
+      const passwordInput = document.createElement("input");
+      passwordInput.type = "password";
+      passwordInput.placeholder = "Password";
+      passwordInput.autocomplete = "current-password";
+      passwordInput.setAttribute("aria-label", "Password");
+      passwordInput.className = keyInput.className;
+      const loginButton = document.createElement("button");
+      loginButton.textContent = "Sign in";
+      loginButton.className = connectButton.className;
+      const logoutButton = document.createElement("button");
+      logoutButton.textContent = "Sign out";
+      logoutButton.className = connectButton.className;
+      async function signIn() {
+        loginButton.disabled = true;
+        try {
+          if (!await OmniBackendClient.probeServer()) {
+            connectionStatus.textContent = "Server unavailable. Start the platform and reconnect.";
+            return;
+          }
+          const res = await OmniBackendClient.request("POST", "/api/auth/login", {
+            username: usernameInput.value.trim(), password: passwordInput.value
+          });
+          passwordInput.value = "";
+          if (!res.ok) return;
+          OmniBackendClient.sessionToken = res.data.access_token;
+          document.getElementById("api-key-display").value = "";
+          keyInput.value = "";
+          await refreshServerRoutes();
+          if (res.data.role === "admin") {
+            const snapshot = await OmniBackendClient.request("GET", "/api/state");
+            if (snapshot.ok) applyServerState(snapshot.data);
+          }
+          connectionStatus.textContent = `Signed in as ${res.data.username} (${res.data.role}). Session expires in one hour.`;
+        } finally { loginButton.disabled = false; }
+      }
+      loginButton.addEventListener("click", signIn);
+      passwordInput.addEventListener("keydown", event => { if (event.key === "Enter") signIn(); });
+      logoutButton.addEventListener("click", async () => {
+        const res = await OmniBackendClient.request("POST", "/api/auth/logout", {});
+        OmniBackendClient.sessionToken = null;
+        document.getElementById("api-key-display").value = "";
+        keyInput.value = "";
+        connectionStatus.textContent = res.ok ? "Signed out." : "Local credentials cleared. Server logout could not be confirmed.";
+      });
+      connectButton.addEventListener("click", async () => {
+        OmniBackendClient.sessionToken = null;
+        document.getElementById("api-key-display").value = keyInput.value.trim();
+        if (await OmniBackendClient.probeServer()) {
+          const res = await OmniBackendClient.request("GET", "/api/state");
+          if (res.ok) {
+            applyServerState(res.data);
+            await refreshServerRoutes();
+          }
+        } else connectionStatus.textContent = "Server unavailable. Start the platform and reconnect.";
+      });
+      const serviceAccess = document.createElement("details");
+      const serviceSummary = document.createElement("summary");
+      serviceSummary.textContent = "Service API key (advanced)";
+      serviceAccess.append(serviceSummary, keyInput, connectButton);
+      connectionPanel.append(usernameInput, passwordInput, loginButton, logoutButton, serviceAccess, connectionStatus);
+      document.body.prepend(connectionPanel);
+      OmniBackendClient.probeServer();
+      document.getElementById("api-key-display")?.addEventListener("change", () => {
+        OmniBackendClient.probeServer();
       });
 
       // =======================================================================
@@ -10458,10 +10442,7 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
         playHarmonicTone(895, 0.25);
       });
 
-      refreshPhase10ModelfileStudio();
-      runStep41SwarmRouter();
-      refreshPhase10HfStudio();
-      runStep43GrpoScorer();
+
 
 
       // Copy Python Snippet

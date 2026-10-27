@@ -1,0 +1,7 @@
+# Verified beta environment: Python 3.13. Update through CI.
+numpy==2.5.4
+scipy==1.18.1
+cryptography==50.0.2
+cffi==2.1.1
+pycparser==3.12
+quickjs==1.19.4

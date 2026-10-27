@@ -24,11 +24,13 @@ import json
 import math
 import random
 import re
+import secrets
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from platform_security import IdentityStore, RateLimiter, audit_event, connect_database, data_path, signing_key_bytes
 
 
 # ============================================================================
@@ -645,8 +647,8 @@ class PersistentEpisodicHyperGraph:
     Module 3: Persistent Episodic Hyper-Graph Memory Vault.
     Saves and reloads discovered isomorphic bridges and manifested operators across runs.
     """
-    def __init__(self, vault_path: str = "/tmp/omnigenesis_episodic_vault.json") -> None:
-        self.vault_path = vault_path
+    def __init__(self, vault_path: Optional[str] = None) -> None:
+        self.vault_path = vault_path or str(data_path("omnigenesis_episodic_vault.json"))
 
     def commit_state(self, core: OmniGenesisSingularityCore) -> Dict[str, Any]:
         payload = {
@@ -894,11 +896,11 @@ class OmniGenesisProductionDB:
     Production ACID SQLite3 persistence layer storing manifested operators,
     AGI isomorphic bridges, ASI Hyper-Minds, episodic memory snapshots, and compiled OMNILANG-Ω apps.
     """
-    def __init__(self, db_path: str = "/tmp/omnigenesis_production.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_production.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -923,6 +925,7 @@ class OmniGenesisProductionDB:
                 eigen_sample REAL
             )
         """)
+        cur.execute("CREATE TABLE IF NOT EXISTS runtime_checkpoint (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, payload TEXT NOT NULL)")
         self.conn.commit()
 
     def sync_core(self, core: OmniGenesisSingularityCore, compiled_app: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -944,6 +947,9 @@ class OmniGenesisProductionDB:
                     float(compiled_app["sample_execution_eigen"]),
                 ),
             )
+        cur.execute("INSERT OR REPLACE INTO runtime_checkpoint VALUES (1, 1, ?)",
+                    (json.dumps({"goal": core.goal, "meta_weights": core.meta_weights,
+                                 "telemetry_history": core.telemetry_history}),))
         self.conn.commit()
         op_count = cur.execute("SELECT COUNT(*) FROM manifested_operators").fetchone()[0]
         app_count = cur.execute("SELECT COUNT(*) FROM forged_omnilang_apps").fetchone()[0]
@@ -953,6 +959,23 @@ class OmniGenesisProductionDB:
             "persisted_omnilang_apps_in_sqlite": app_count,
             "status": "ACID_COMMITTED",
         }
+
+    def restore_core(self, core: OmniGenesisSingularityCore) -> bool:
+        row = self.conn.execute("SELECT schema_version, payload FROM runtime_checkpoint WHERE id=1").fetchone()
+        if not row:
+            return False
+        if row[0] != 1:
+            raise RuntimeError("Unsupported runtime checkpoint version")
+        checkpoint = json.loads(row[1])
+        # Revalidate stored source through the same AST gate used for new operators.
+        for name, domain, source, cycle in self.conn.execute(
+            "SELECT name, domain, source_code, cycle FROM manifested_operators"
+        ).fetchall():
+            core.manifest_engine.manifest_operator(name, domain, source, cycle=cycle)
+        core.goal = checkpoint["goal"]
+        core.meta_weights = checkpoint["meta_weights"]
+        core.telemetry_history = checkpoint["telemetry_history"]
+        return True
 
 
 
@@ -1667,7 +1690,7 @@ class LiveExternalConnectorHub:
         self.openai_key = os.environ.get("OPENAI_API_KEY", "")
         self.gemini_key = os.environ.get("GEMINI_API_KEY", "")
         self.ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
-        self.stripe_webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_omni_prod_secret_key")
+        self.stripe_webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
         self.sendgrid_key = os.environ.get("SENDGRID_API_KEY", "")
 
     def get_connector_status(self) -> Dict[str, Any]:
@@ -1675,7 +1698,7 @@ class LiveExternalConnectorHub:
             "openai_api": "LIVE_KEY_LOADED" if self.openai_key else "SURROGATE_FALLBACK_ACTIVE",
             "gemini_api": "LIVE_KEY_LOADED" if self.gemini_key else "SURROGATE_FALLBACK_ACTIVE",
             "ollama_local": self.ollama_url,
-            "stripe_billing_webhook": "HMAC_SHA256_READY",
+            "stripe_billing_webhook": "HMAC_SHA256_READY" if self.stripe_webhook_secret else "DISABLED_NO_SECRET",
             "email_outreach_connector": "LIVE_KEY_LOADED" if self.sendgrid_key else "SQLITE_TRANSACTIONAL_OUTBOX_ACTIVE",
         }
 
@@ -1720,6 +1743,8 @@ class LiveExternalConnectorHub:
 
     def verify_stripe_webhook_signature(self, payload_body: str, signature_hex: str) -> bool:
         import hmac
+        if not self.stripe_webhook_secret:
+            return False
         expected = hmac.new(
             self.stripe_webhook_secret.encode("utf-8"),
             payload_body.encode("utf-8"),
@@ -1735,14 +1760,25 @@ class OmniSaaSCommercialPlatform:
       - Lead-to-Client CRM Deals, Proposals & Human Approval Queue (Step 1)
       - Document Intake & Repurposing Job Ledger (Step 1)
     """
-    def __init__(self, db_path: str = "/tmp/omnigenesis_saas_commercial.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        import os
         import sqlite3
+
+        if db_path is None:
+            data_dir = Path(os.environ.get("OMNIGENESIS_DATA_DIR", str(Path.home() / ".local/share/omnigenesis")))
+            data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            os.chmod(data_dir, 0o700)
+            db_path = str(data_dir / "saas_commercial.sqlite3")
         self.db_path = db_path
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
+        self.conn.execute("PRAGMA busy_timeout = 30000")
+        if self.db_path != ":memory:":
+            self.conn.execute("PRAGMA journal_mode = WAL")
+            os.chmod(self.db_path, 0o600)
         self.connector_hub = LiveExternalConnectorHub()
         self._init_commercial_schema()
-        self._seed_default_tenants_and_wedge_data()
+        self._migrate_tenant_api_keys()
 
     def _init_commercial_schema(self) -> None:
         cur = self.conn.cursor()
@@ -1792,50 +1828,55 @@ class OmniSaaSCommercialPlatform:
         self.conn.commit()
 
     def _seed_default_tenants_and_wedge_data(self) -> None:
+        return
+
+    def _migrate_tenant_api_keys(self) -> None:
         cur = self.conn.cursor()
-        tenants = [
-            ("tenant_aetherion", "Aetherion Quantum Labs", "ENTERPRISE_OS", "sk-live-omni-aetherion-9941", 25000, 2499.0, "RBAC_ADMIN_AND_REVIEWER"),
-            ("tenant_hyperion", "Hyperion AI Growth Agency", "GROWTH_PRO", "sk-live-omni-hyperion-7720", 8500, 799.0, "RBAC_OPERATOR_APPROVAL_REQUIRED"),
-            ("tenant_solaris", "SolarisHVDC Grid Corp", "ENTERPRISE_OS", "sk-live-omni-solaris-5518", 50000, 4999.0, "RBAC_AUTONOMOUS_WITH_LYAPUNOV_GATE"),
-        ]
-        for t in tenants:
-            cur.execute("INSERT OR IGNORE INTO saas_tenants VALUES (?, ?, ?, ?, ?, ?, ?)", t)
-
-        leads = [
-            ("lead_01", "tenant_aetherion", "Valkyrie Cryogenics Inc", "cto@valkyriecryo.io", 120000.0, 94, "PROPOSAL_GENERATED", "APPROVED", "Topological Lattice Control & Portal Setup ($120k)"),
-            ("lead_02", "tenant_hyperion", "Nexus FinTech Partners", "ops@nexusfintech.com", 65000.0, 88, "OUTREACH_DRAFTED", "PENDING_HUMAN_APPROVAL", "AI Support Desk & Document Intake Automation ($65k)"),
-        ]
-        for l in leads:
-            cur.execute("INSERT OR IGNORE INTO commercial_leads_pipeline VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", l)
-
-        approvals = [
-            ("appr_101", "tenant_hyperion", "lead-to-client", "Nexus FinTech Partners", "send-outreach-and-proposal ($65,000)", "PENDING"),
-            ("appr_102", "tenant_aetherion", "document-intake-pipeline", "INV-2026-9981_Cryo.pdf", "override-low-confidence-field (0.86 < 0.90)", "PENDING"),
-        ]
-        for a in approvals:
-            cur.execute("INSERT OR IGNORE INTO human_approval_queue VALUES (?, ?, ?, ?, ?, ?)", a)
+        cur.execute("UPDATE saas_tenants SET api_key = NULL WHERE api_key NOT LIKE 'sha256:%'")
         self.conn.commit()
+
+    def tenant_for_api_key(self, api_key: str) -> Optional[str]:
+        key_hash = f"sha256:{hashlib.sha256(api_key.encode('utf-8')).hexdigest()}"
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT tenant_id FROM saas_tenants WHERE api_key = ?", (key_hash,)
+            ).fetchone()
+        return row[0] if row else None
 
     def authenticate_and_meter(self, api_key: str, action_name: str, credit_cost: int = 10) -> Dict[str, Any]:
-        cur = self.conn.cursor()
-        row = cur.execute(
-            "SELECT tenant_id, org_name, plan_tier, credits_remaining, monthly_mrr_usd FROM saas_tenants WHERE api_key = ?",
-            (api_key,),
-        ).fetchone()
-        if not row:
-            # Fallback to default enterprise tenant in demo mode if custom key passed
+        if credit_cost < 0:
+            return {"authenticated": False, "error": "INVALID_CREDIT_COST"}
+        key_hash = f"sha256:{hashlib.sha256(api_key.encode('utf-8')).hexdigest()}"
+        with self._lock:
+            cur = self.conn.cursor()
             row = cur.execute(
-                "SELECT tenant_id, org_name, plan_tier, credits_remaining, monthly_mrr_usd FROM saas_tenants LIMIT 1"
+                "SELECT tenant_id, org_name, plan_tier FROM saas_tenants WHERE api_key = ?",
+                (key_hash,),
             ).fetchone()
-        tenant_id, org_name, plan_tier, credits, mrr = row
-        if credits < credit_cost:
-            return {"authenticated": False, "error": "INSUFFICIENT_CREDITS"}
+            if not row:
+                return {"authenticated": False, "error": "INVALID_API_KEY"}
+            result = self._meter_tenant_locked(cur, row, action_name, credit_cost)
+            if result.get("authenticated"):
+                self.conn.commit()
+            return result
 
-        new_credits = credits - credit_cost
-        cur.execute("UPDATE saas_tenants SET credits_remaining = ? WHERE tenant_id = ?", (new_credits, tenant_id))
-        ev_id = f"evt_{hashlib.sha256(f'{tenant_id}:{action_name}:{time.time()}'.encode()).hexdigest()[:10]}"
-        cur.execute("INSERT INTO usage_audit_ledger VALUES (?, ?, ?, ?, ?)", (ev_id, tenant_id, action_name, credit_cost, time.time()))
-        self.conn.commit()
+    def _meter_tenant_locked(self, cur: Any, row: Tuple[Any, ...], action_name: str, credit_cost: int) -> Dict[str, Any]:
+        tenant_id, org_name, plan_tier = row
+        cur.execute(
+            "UPDATE saas_tenants SET credits_remaining = credits_remaining - ? WHERE tenant_id = ? AND credits_remaining >= ?",
+            (credit_cost, tenant_id, credit_cost),
+        )
+        if cur.rowcount != 1:
+            self.conn.rollback()
+            return {"authenticated": False, "error": "INSUFFICIENT_CREDITS"}
+        new_credits = cur.execute(
+            "SELECT credits_remaining FROM saas_tenants WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()[0]
+        ev_id = f"evt_{secrets.token_hex(12)}"
+        cur.execute(
+            "INSERT INTO usage_audit_ledger VALUES (?, ?, ?, ?, ?)",
+            (ev_id, tenant_id, action_name, credit_cost, time.time()),
+        )
         return {
             "authenticated": True,
             "tenant_id": tenant_id,
@@ -1847,45 +1888,61 @@ class OmniSaaSCommercialPlatform:
         }
 
     def execute_commercial_lead_wedge(
-        self, api_key: str, company_name: str, contact_email: str, deal_value_usd: float, auto_approve: bool = False
+        self, api_key: str, company_name: str, contact_email: str, deal_value_usd: float
     ) -> Dict[str, Any]:
-        auth = self.authenticate_and_meter(api_key, "lead_to_client_wedge_execution", credit_cost=25)
-        if not auth.get("authenticated"):
-            return auth
-
+        if (
+            not isinstance(company_name, str) or not company_name.strip() or len(company_name) > 200
+            or not isinstance(contact_email, str) or len(contact_email) > 254
+            or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", contact_email)
+            or not math.isfinite(deal_value_usd) or deal_value_usd <= 0
+        ):
+            return {"authenticated": False, "error": "INVALID_LEAD_INPUT"}
+        key_hash = f"sha256:{hashlib.sha256(api_key.encode('utf-8')).hexdigest()}"
+        with self._lock:
+            tenant_row = self.conn.execute(
+                "SELECT tenant_id, org_name, plan_tier FROM saas_tenants WHERE api_key = ?", (key_hash,)
+            ).fetchone()
+        if not tenant_row:
+            return {"authenticated": False, "error": "INVALID_API_KEY"}
         llm_res = self.connector_hub.invoke_llm_or_surrogate(
             f"Draft executive outreach and scope proposal for {company_name} (${deal_value_usd:,.0f})"
         )
         icp_score = min(99, int(55 + (deal_value_usd / 3000.0)))
-        lead_id = f"lead_{hashlib.sha256(company_name.encode()).hexdigest()[:8]}"
-        approval_status = "APPROVED_AND_DISPATCHED" if auto_approve else "QUEUED_FOR_HUMAN_REVIEW"
-        stage = "ONBOARDING_PORTAL_PROVISIONED" if auto_approve else "AWAITING_OUTREACH_APPROVAL"
+        approval_status = "QUEUED_FOR_HUMAN_REVIEW"
+        stage = "AWAITING_OUTREACH_APPROVAL"
 
-        cur = self.conn.cursor()
-        cur.execute(
-            "INSERT OR REPLACE INTO commercial_leads_pipeline VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                lead_id,
-                auth["tenant_id"],
-                company_name,
-                contact_email,
-                deal_value_usd,
-                icp_score,
-                stage,
-                approval_status,
-                llm_res["output"],
-            ),
-        )
-        if not auto_approve:
-            appr_id = f"appr_{lead_id[-6:]}"
-            cur.execute(
-                "INSERT OR REPLACE INTO human_approval_queue VALUES (?, ?, ?, ?, ?, ?)",
-                (appr_id, auth["tenant_id"], "lead-to-client", company_name, f"send-proposal (${deal_value_usd:,.0f})", "PENDING"),
-            )
-        self.conn.commit()
+        with self._lock:
+            cur = self.conn.cursor()
+            tenant_row = cur.execute(
+                "SELECT tenant_id, org_name, plan_tier FROM saas_tenants WHERE api_key = ?", (key_hash,)
+            ).fetchone()
+            if not tenant_row:
+                return {"authenticated": False, "error": "INVALID_API_KEY"}
+            auth = self._meter_tenant_locked(cur, tenant_row, "lead_to_client_wedge_execution", 25)
+            if not auth.get("authenticated"):
+                return auth
+            lead_material = f"{auth['tenant_id']}:{company_name}:{secrets.token_hex(8)}"
+            lead_id = f"lead_{hashlib.sha256(lead_material.encode()).hexdigest()[:16]}"
+            appr_id = f"appr_{lead_id[5:]}"
+            try:
+                cur.execute(
+                    "INSERT INTO commercial_leads_pipeline VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (lead_id, auth["tenant_id"], company_name, contact_email, deal_value_usd,
+                     icp_score, stage, approval_status, llm_res["output"]),
+                )
+                cur.execute(
+                    "INSERT INTO human_approval_queue VALUES (?, ?, ?, ?, ?, ?)",
+                    (appr_id, auth["tenant_id"], "lead-to-client", lead_id,
+                     f"send-proposal (${deal_value_usd:,.0f})", "PENDING"),
+                )
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
         return {
             "auth_and_metering": auth,
             "lead_id": lead_id,
+            "approval_id": appr_id,
             "company": company_name,
             "icp_score": icp_score,
             "stage": stage,
@@ -1893,36 +1950,54 @@ class OmniSaaSCommercialPlatform:
             "synthesized_proposal": llm_res,
         }
 
-    def resolve_approval_gate(self, approval_id: str, decision: str = "APPROVED") -> Dict[str, Any]:
+    def resolve_approval_gate(
+        self, approval_id: str, decision: str = "APPROVED", tenant_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        if decision not in ("APPROVED", "HOLD", "REJECTED") or not tenant_id:
+            return {"error": "VALID_TENANT_AND_DECISION_REQUIRED"}
         with self._lock:
             cur = self.conn.cursor()
             row = cur.execute(
-                "SELECT target_entity, workflow_type FROM human_approval_queue WHERE approval_id = ?",
-                (approval_id,),
+                "SELECT target_entity, workflow_type FROM human_approval_queue WHERE approval_id = ? AND tenant_id = ? AND status = 'PENDING'",
+                (approval_id, tenant_id),
             ).fetchone()
-            new_status = "APPROVED_AND_DISPATCHED" if decision == "APPROVED" else decision
-            cur.execute("UPDATE human_approval_queue SET status = ? WHERE approval_id = ?", (new_status, approval_id))
-            if row and decision == "APPROVED":
-                target_entity = row[0]
-                cur.execute(
-                    "UPDATE commercial_leads_pipeline SET stage = ?, approval_status = ? WHERE company_name = ?",
-                    ("ONBOARDING_PORTAL_LIVE", "APPROVED", target_entity),
-                )
+            if not row:
+                return {"error": "APPROVAL_NOT_FOUND_OR_ALREADY_RESOLVED"}
+            new_status = "APPROVED" if decision == "APPROVED" else decision
+            cur.execute(
+                "UPDATE human_approval_queue SET status = ? WHERE approval_id = ? AND tenant_id = ? AND status = 'PENDING'",
+                (new_status, approval_id, tenant_id),
+            )
+            lead_stage = "AWAITING_EXTERNAL_DISPATCH" if decision == "APPROVED" else decision
+            cur.execute(
+                "UPDATE commercial_leads_pipeline SET stage = ?, approval_status = ? WHERE tenant_id = ? AND lead_id = ? AND approval_status = ?",
+                (lead_stage, new_status, tenant_id, row[0], "QUEUED_FOR_HUMAN_REVIEW"),
+            )
             self.conn.commit()
-            return {"approval_id": approval_id, "new_status": new_status, "target_entity": row[0] if row else None}
+            return {"approval_id": approval_id, "new_status": new_status, "target_entity": row[0]}
 
     def provision_tenant(
         self, org_name: str, plan_tier: str = "ENTERPRISE_OS", monthly_mrr_usd: float = 2499.0, credits: int = 25000
     ) -> Dict[str, Any]:
+        allowed_plans = {"ENTERPRISE_OS", "GROWTH_PRO", "STARTER_PRO"}
+        if (
+            not isinstance(org_name, str) or not org_name.strip() or len(org_name) > 200
+            or plan_tier not in allowed_plans
+            or not math.isfinite(monthly_mrr_usd) or monthly_mrr_usd < 0
+            or not isinstance(credits, int) or credits < 0 or credits > 1000000000
+        ):
+            raise ValueError("Invalid tenant provisioning values")
         with self._lock:
             slug = re.sub(r"[^a-z0-9]+", "", org_name.lower())[:10] or "tenant"
-            tenant_id = f"tenant_{slug}_{int(time.time() * 1000) % 100000}"
-            api_key = f"sk-live-omni-{slug}-{random.randint(1000, 9999)}"
+            import secrets
+            tenant_id = f"tenant_{slug}_{secrets.token_hex(8)}"
+            api_key = f"omni_tenant_{secrets.token_urlsafe(32)}"
+            api_key_hash = f"sha256:{hashlib.sha256(api_key.encode('utf-8')).hexdigest()}"
             role_policy = "RBAC_ADMIN_AND_REVIEWER" if "ENTERPRISE" in plan_tier else "RBAC_OPERATOR_APPROVAL_REQUIRED"
             cur = self.conn.cursor()
             cur.execute(
-                "INSERT OR REPLACE INTO saas_tenants VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (tenant_id, org_name, plan_tier, api_key, int(credits), float(monthly_mrr_usd), role_policy),
+                "INSERT INTO saas_tenants VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (tenant_id, org_name, plan_tier, api_key_hash, int(credits), float(monthly_mrr_usd), role_policy),
             )
             self.conn.commit()
             return {
@@ -1936,44 +2011,48 @@ class OmniSaaSCommercialPlatform:
             }
 
     def process_stripe_webhook(self, credit_topup: int = 5000, event_type: str = "invoice.paid") -> Dict[str, Any]:
-        with self._lock:
-            cur = self.conn.cursor()
-            cur.execute("UPDATE saas_tenants SET credits_remaining = credits_remaining + ?", (int(credit_topup),))
-            self.conn.commit()
-            summary = self.get_saas_Summary()
-            return {
-                "webhook_event": event_type,
-                "hmac_sha256_verified": True,
-                "credits_added_per_tenant": int(credit_topup),
-                "updated_tenants": summary["tenants"],
-            }
+        return {"processed": False, "error": "VERIFIED_STRIPE_EVENT_REQUIRED"}
 
     def get_saas_summary(self) -> Dict[str, Any]:
         return self.get_saas_Summary()
 
-    def get_saas_Summary(self) -> Dict[str, Any]:
+    def get_saas_Summary(self, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         cur = self.conn.cursor()
+        where = " WHERE tenant_id = ?" if tenant_id else ""
+        args = (tenant_id,) if tenant_id else ()
+        tenant_rows = cur.execute(
+            "SELECT tenant_id, org_name, plan_tier, credits_remaining, monthly_mrr_usd, role_policy FROM saas_tenants" + where,
+            args,
+        ).fetchall()
+        lead_rows = cur.execute(
+            "SELECT lead_id, tenant_id, company_name, contact_email, deal_value_usd, icp_score, stage, approval_status FROM commercial_leads_pipeline" + where,
+            args,
+        ).fetchall()
+        approval_rows = cur.execute(
+            "SELECT approval_id, tenant_id, workflow_type, target_entity, requested_action, status FROM human_approval_queue" + where,
+            args,
+        ).fetchall()
         tenants = [
             {
                 "tenant_id": r[0], "org_name": r[1], "plan_tier": r[2],
-                "api_key": r[3], "credits_remaining": r[4], "monthly_mrr_usd": r[5], "role_policy": r[6]
+                "credits_remaining": r[3], "monthly_mrr_usd": r[4], "role_policy": r[5],
             }
-            for r in cur.execute("SELECT * FROM saas_tenants").fetchall()
+            for r in tenant_rows
         ]
         leads = [
             {
                 "lead_id": r[0], "tenant_id": r[1], "company_name": r[2],
                 "contact_email": r[3], "deal_value_usd": r[4], "icp_score": r[5],
-                "stage": r[6], "approval_status": r[7]
+                "stage": r[6], "approval_status": r[7],
             }
-            for r in cur.execute("SELECT lead_id, tenant_id, company_name, contact_email, deal_value_usd, icp_score, stage, approval_status FROM commercial_leads_pipeline").fetchall()
+            for r in lead_rows
         ]
         approvals = [
             {
                 "approval_id": r[0], "tenant_id": r[1], "workflow_type": r[2],
-                "target_entity": r[3], "requested_action": r[4], "status": r[5]
+                "target_entity": r[3], "requested_action": r[4], "status": r[5],
             }
-            for r in cur.execute("SELECT * FROM human_approval_queue").fetchall()
+            for r in approval_rows
         ]
         total_mrr = sum(t["monthly_mrr_usd"] for t in tenants)
         total_pipeline = sum(l["deal_value_usd"] for l in leads)
@@ -1982,7 +2061,7 @@ class OmniSaaSCommercialPlatform:
             "monthly_recurring_revenue_usd": total_mrr,
             "annualized_run_rate_arr_usd": total_mrr * 12.0,
             "active_pipeline_value_usd": total_pipeline,
-            "connectors": self.connector_hub.get_connector_status(),
+            **({"connectors": self.connector_hub.get_connector_status()} if tenant_id is None else {}),
             "tenants": tenants,
             "leads_pipeline": leads,
             "approval_queue": approvals,
@@ -2355,9 +2434,19 @@ class ExecutiveWhitepaperAndPitchGenerator:
 
 def run_production_self_test() -> Dict[str, Any]:
     """
-    Executes a deterministic 10-point unit & integration test suite across all
+    Executes a local unit & integration test suite across all
     subsystems, asserting zero errors and verifying formal invariants.
     """
+    test_key = "self-test-admin-key-0123456789-abcdefghijkl"
+    test_secret = "self-test-jwt-secret-0123456789-abcdefghijkl"
+
+    def selftest_urlopen(request, timeout=10):
+        import urllib.request
+        if isinstance(request, str):
+            request = urllib.request.Request(request)
+        request.add_header("Authorization", f"Bearer {test_key}")
+        return urllib.request.urlopen(request, timeout=timeout)
+
     results: List[Dict[str, Any]] = []
     engine = OmniGenesisSingularityCore(goal="Production Self-Test Verification Vector")
 
@@ -2436,17 +2525,23 @@ def run_production_self_test() -> Dict[str, Any]:
     results.append({"check": "09_Enterprise_28_Template_Library_And_Flagships", "status": "PASSED"})
 
     # 10. Test Steps 1-3: Commercial Flagship Wedge, Live Connector Hub & Multi-Tenant SaaS Auth/Billing
-    saas = OmniSaaSCommercialPlatform()
+    saas = OmniSaaSCommercialPlatform(":memory:")
+    test_tenant = saas.provision_tenant("Self Test Tenant")
+    assert saas.authenticate_and_meter("invalid-test-key", "self-test")["error"] == "INVALID_API_KEY"
     wedge_run = saas.execute_commercial_lead_wedge(
-        api_key="sk-live-omni-aetherion-9941",
+        api_key=test_tenant["api_key"],
         company_name="Quantum Grid Dynamics",
         contact_email="founder@quantumgrid.io",
         deal_value_usd=95000.0,
-        auto_approve=True,
     )
-    saas_state = saas.get_saas_Summary()
+    saas_state = saas.get_saas_Summary(test_tenant["tenant_id"])
+    approval_id = saas_state["approval_queue"][0]["approval_id"]
+    approval_result = saas.resolve_approval_gate(approval_id, "APPROVED", test_tenant["tenant_id"])
     assert wedge_run["auth_and_metering"]["authenticated"] is True
-    assert saas_state["monthly_recurring_revenue_usd"] >= 8000.0
+    assert wedge_run["approval_status"] == "QUEUED_FOR_HUMAN_REVIEW"
+    assert approval_result["new_status"] == "APPROVED"
+    assert saas.authenticate_and_meter("invalid-test-key", "self-test")["error"] == "INVALID_API_KEY"
+    assert len(saas_state["tenants"]) == 1 and "api_key" not in saas_state["tenants"][0]
     results.append({"check": "10_Commercial_SaaS_Wedge_Connectors_And_Billing", "status": "PASSED"})
 
     # 11. Test Step 4: Visual DAG Workflow Orchestrator
@@ -2613,13 +2708,14 @@ def run_production_self_test() -> Dict[str, Any]:
     assert heal_pll["ci_cd_status"] == "READY_TO_AUTO_MERGE" and heal_rag["ci_cd_status"] == "READY_TO_AUTO_MERGE"
     results.append({"check": "37_MultiModule_AST_Healer_PLL_And_RAG", "status": "PASSED"})
 
-    # 38. Test SaaS Tenant Provisioning, Approval Resolution & Stripe Webhook Top-Up
+    # 38. Test SaaS tenant isolation and fail-closed unverified billing
     new_ten = saas.provision_tenant("Chronos Photonic Labs", "ENTERPRISE_OS", 2499.0, 25000)
-    appr_res = saas.resolve_approval_gate("appr_101", "APPROVED")
+    foreign_approval = saas.resolve_approval_gate("unknown-approval", "APPROVED", new_ten["tenant_id"])
     stripe_res = saas.process_stripe_webhook(credit_topup=5000, event_type="invoice.paid")
-    assert new_ten["credits_remaining"] == 25000 and appr_res["new_status"] == "APPROVED_AND_DISPATCHED"
-    assert stripe_res["hmac_sha256_verified"] is True
-    results.append({"check": "38_SaaS_Tenant_Provision_Approval_And_Stripe_Webhook", "status": "PASSED"})
+    assert new_ten["credits_remaining"] == 25000
+    assert foreign_approval["error"] == "APPROVAL_NOT_FOUND_OR_ALREADY_RESOLVED"
+    assert stripe_res["processed"] is False
+    results.append({"check": "38_SaaS_Tenant_Isolation_And_Fail_Closed_Billing", "status": "PASSED"})
 
     # 39. Test SDK Client Local Execution (Fixed PQC + Materials Discovery + Pilot Contract)
     exec_ns: Dict[str, Any] = {}
@@ -2631,16 +2727,16 @@ def run_production_self_test() -> Dict[str, Any]:
 
     # 40. Test Live Multi-Threaded HTTP Backend Server (CORS OPTIONS, GET & POST Endpoints)
     import urllib.request
-    srv, srv_port = create_production_http_server(port=0)
+    srv, srv_port = create_production_http_server(port=0, api_credentials={"admin": test_key}, jwt_signing_secret=test_secret)
     srv_thread = threading.Thread(target=srv.serve_forever, daemon=True)
     srv_thread.start()
     try:
         # Test OPTIONS CORS preflight
         opt_req = urllib.request.Request(f"http://127.0.0.1:{srv_port}/api/state", method="OPTIONS")
-        with urllib.request.urlopen(opt_req, timeout=5) as resp:
-            assert resp.status == 204 and resp.headers.get("Access-Control-Allow-Origin") == "*"
+        with selftest_urlopen(opt_req, timeout=5) as resp:
+            assert resp.status == 204 and resp.headers.get("Access-Control-Allow-Origin") is None
         # Test GET /api/state
-        with urllib.request.urlopen(f"http://127.0.0.1:{srv_port}/api/state", timeout=5) as resp:
+        with selftest_urlopen(f"http://127.0.0.1:{srv_port}/api/state", timeout=5) as resp:
             st_data = json.loads(resp.read().decode("utf-8"))
             assert st_data["status"] == "ONLINE" and len(st_data["operators"]) >= 4
         # Test POST /v1/frontier/run-all
@@ -2650,7 +2746,7 @@ def run_production_self_test() -> Dict[str, Any]:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(post_req, timeout=10) as resp:
+        with selftest_urlopen(post_req, timeout=10) as resp:
             fr_data = json.loads(resp.read().decode("utf-8"))
             assert fr_data["physics"]["phase_stability"] == "LOCKED"
             assert fr_data["prover"]["status"] == "Q.E.D._VERIFIED"
@@ -2690,7 +2786,7 @@ def run_production_self_test() -> Dict[str, Any]:
     results.append({"check": "43_Step27_Persistent_5D_Vector_Graph_RAG_Pipeline", "status": "PASSED"})
 
     # 44. Test Step 28 (Track 4): Sovereign JWT/OAuth2 RBAC Token Authority & Stripe Checkout Session
-    jwt_eng = SovereignJWTRBACAndStripeEngine()
+    jwt_eng = SovereignJWTRBACAndStripeEngine("test-jwt-secret-that-is-at-least-thirty-two-characters")
     tok_bundle = jwt_eng.issue_jwt_token("cto@aetherion.io", "tenant_aetherion", "SOVEREIGN_ADMIN")
     ver_bundle = jwt_eng.verify_jwt_token(tok_bundle["access_token"], required_scope="cloud:deploy:self")
     stripe_sess = jwt_eng.create_stripe_checkout_session("tenant_aetherion", "ENTERPRISE_OS", seats=25)
@@ -2704,26 +2800,34 @@ def run_production_self_test() -> Dict[str, Any]:
     results.append({"check": "45_Step29_FullStack_Repository_ZIP_Archive_Exporter", "status": "PASSED"})
 
     # 46. Test Phase-7 Live HTTP Endpoints (/v1/computer-use/actuate, /v1/knowledge/query, /v1/auth/token)
-    srv2, srv2_port = create_production_http_server(port=0)
+    srv2, srv2_port = create_production_http_server(
+        port=0, api_credentials={"admin": test_key}, jwt_signing_secret=test_secret,
+    )
     srv2_thread = threading.Thread(target=srv2.serve_forever, daemon=True)
     srv2_thread.start()
     try:
         cu_req = urllib.request.Request(
             f"http://127.0.0.1:{srv2_port}/v1/computer-use/actuate",
             data=b'{"objective":"Automated Phase-7 Browser Check","target_url":"https://portal.aetherion.io/app"}',
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer self-test-admin-key-0123456789-abcdefghijkl",
+            },
             method="POST",
         )
-        with urllib.request.urlopen(cu_req, timeout=10) as r_cu:
+        with selftest_urlopen(cu_req, timeout=10) as r_cu:
             cu_http = json.loads(r_cu.read().decode("utf-8"))
             assert cu_http["steps_executed"] == 4
         rag_req = urllib.request.Request(
             f"http://127.0.0.1:{srv2_port}/v1/knowledge/query",
             data=b'{"query":"superconductor Allen-Dynes Tc","top_k":2}',
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer self-test-admin-key-0123456789-abcdefghijkl",
+            },
             method="POST",
         )
-        with urllib.request.urlopen(rag_req, timeout=10) as r_rag:
+        with selftest_urlopen(rag_req, timeout=10) as r_rag:
             rag_http = json.loads(r_rag.read().decode("utf-8"))
             assert len(rag_http["top_k_results"]) == 2
     finally:
@@ -2778,7 +2882,7 @@ def run_production_self_test() -> Dict[str, Any]:
     results.append({"check": "51_Step34_FinOps_And_Carbon_Aware_Pareto_Router", "status": "PASSED"})
 
     # 52. Test Live HTTP Phase-8 Endpoints (/v1/mcp/rpc, /v1/replay/fork, /v1/redteam/campaign, /v1/webgpu/transpile, /v1/finops/route)
-    srv3, srv3_port = create_production_http_server(port=0)
+    srv3, srv3_port = create_production_http_server(port=0, api_credentials={"admin": test_key}, jwt_signing_secret=test_secret)
     srv3_thread = threading.Thread(target=srv3.serve_forever, daemon=True)
     srv3_thread.start()
     try:
@@ -2788,7 +2892,7 @@ def run_production_self_test() -> Dict[str, Any]:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(mcp_http_req, timeout=10) as r_mcp:
+        with selftest_urlopen(mcp_http_req, timeout=10) as r_mcp:
             mcp_http_data = json.loads(r_mcp.read().decode("utf-8"))
             assert len(mcp_http_data["result"]["tools"]) == 5
 
@@ -2798,7 +2902,7 @@ def run_production_self_test() -> Dict[str, Any]:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(rt_http_req, timeout=10) as r_rt:
+        with selftest_urlopen(rt_http_req, timeout=10) as r_rt:
             rt_http_data = json.loads(r_rt.read().decode("utf-8"))
             assert rt_http_data["zero_breaches_verified"] is True
     finally:
@@ -2840,7 +2944,7 @@ def run_production_self_test() -> Dict[str, Any]:
     results.append({"check": "57_Step39_Constitutional_Quadratic_Governance_DAO", "status": "PASSED"})
 
     # 58. Test Live HTTP Phase-9 Endpoints (/v1/realtime/frame, /v1/neuromorphic/simulate, /v1/cegis/synthesize, /v1/biofoundry/design, /v1/governance/vote)
-    srv4, srv4_port = create_production_http_server(port=0)
+    srv4, srv4_port = create_production_http_server(port=0, api_credentials={"admin": test_key}, jwt_signing_secret=test_secret)
     srv4_thread = threading.Thread(target=srv4.serve_forever, daemon=True)
     srv4_thread.start()
     try:
@@ -2850,7 +2954,7 @@ def run_production_self_test() -> Dict[str, Any]:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(cegis_req, timeout=10) as r_cg:
+        with selftest_urlopen(cegis_req, timeout=10) as r_cg:
             cg_http = json.loads(r_cg.read().decode("utf-8"))
             assert cg_http["smt_verification_result"] == "UNSAT_PROVEN_SOUND"
 
@@ -2860,7 +2964,7 @@ def run_production_self_test() -> Dict[str, Any]:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(dao_req, timeout=10) as r_dao:
+        with selftest_urlopen(dao_req, timeout=10) as r_dao:
             dao_http = json.loads(r_dao.read().decode("utf-8"))
             assert dao_http["status"] == "RATIFIED_CONSTITUTIONAL"
     finally:
@@ -2905,20 +3009,20 @@ def run_production_self_test() -> Dict[str, Any]:
     results.append({"check": "63_Step44_HuggingFace_Merge_Hub_And_GGUF_Ollama_Exporter", "status": "PASSED"})
 
     # 64. Test Live HTTP Phase-10 Endpoints (/v1/ollama/modelfiles, /v1/ollama/swarm-infer, /v1/huggingface/finetune-kit, /v1/huggingface/grpo-reward)
-    srv5, srv5_port = create_production_http_server(port=0)
+    srv5, srv5_port = create_production_http_server(port=0, api_credentials={"admin": test_key}, jwt_signing_secret=test_secret)
     srv5_thread = threading.Thread(target=srv5.serve_forever, daemon=True)
     srv5_thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{srv5_port}/v1/ollama/modelfiles?tier=balanced", timeout=10) as r_mf:
+        with selftest_urlopen(f"http://127.0.0.1:{srv5_port}/v1/ollama/modelfiles?tier=balanced", timeout=10) as r_mf:
             mf_http = json.loads(r_mf.read().decode("utf-8"))
             assert mf_http["total_models"] == 5
         hf_req = urllib.request.Request(
             f"http://127.0.0.1:{srv5_port}/v1/huggingface/grpo-reward",
-            data=b'{"completion":"def op(x):\n    return round(math.tanh(x)*0.9984, 6)\n# vector_5d: [0.95, 0.89]"}',
+            data=json.dumps({"completion": "def op(x):\n    return round(math.tanh(x)*0.9984, 6)\n# vector_5d: [0.95, 0.89]"}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(hf_req, timeout=10) as r_hf:
+        with selftest_urlopen(hf_req, timeout=10) as r_hf:
             hf_http = json.loads(r_hf.read().decode("utf-8"))
             assert hf_http["total_grpo_verifiable_reward"] == 1.0
     finally:
@@ -2951,6 +3055,11 @@ class OmniPlatformAIModel:
     api_route: str
 
     def infer(self, input_vector: List[float], coherence: float = 0.94) -> Dict[str, Any]:
+        if not isinstance(input_vector, list) or any(
+            isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+            for value in input_vector
+        ):
+            raise ValueError("input_vector must be a list of finite numbers")
         x1 = input_vector[0] if len(input_vector) > 0 else 0.90
         x2 = input_vector[1] if len(input_vector) > 1 else 0.85
         hidden = math.tanh(self.weights_w1[0] * x1 + self.weights_w2[0] * x2 + self.bias)
@@ -3079,11 +3188,11 @@ class AutonomousAgentEconomyTreasury:
       - 10.0% Protocol Reserve Treasury
     """
 
-    def __init__(self, db_path: str = "/tmp/omnigenesis_agent_economy.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_agent_economy.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS economy_bounty_ledger ("
             "tx_hash TEXT PRIMARY KEY, task_name TEXT, status TEXT, bounty_credits REAL, "
@@ -3571,15 +3680,21 @@ class RealNativeAndWasmBinaryCompiler:
     ) -> Dict[str, Any]:
         import ctypes
         import subprocess
+        import shutil
 
-        c_path = f"/tmp/omni_edge_{fn_name}.c"
-        so_path = f"/tmp/omni_edge_{fn_name}.so"
+        import tempfile
+
+        build_root = Path(__file__).resolve().parent / "build" / "native"
+        build_root.mkdir(parents=True, exist_ok=True)
+        artifact_dir = Path(tempfile.mkdtemp(prefix="omni_edge_", dir=build_root))
+        c_path = str(artifact_dir / "kernel.c")
+        so_path = str(artifact_dir / "kernel.so")
         with open(c_path, "w", encoding="utf-8") as f:
             f.write(c99_source)
 
         t0 = time.perf_counter()
         subprocess.run(
-            ["/usr/bin/gcc", "-O3", "-shared", "-fPIC", c_path, "-o", so_path],
+            [shutil.which("gcc") or shutil.which("clang") or "gcc", "-O3", "-shared", "-fPIC", c_path, "-o", so_path, "-lm"],
             check=True,
             capture_output=True,
         )
@@ -3596,7 +3711,7 @@ class RealNativeAndWasmBinaryCompiler:
 
         so_bytes = Path(so_path).read_bytes()
         return {
-            "compiler": "gcc (Debian 12.2.0) -O3 -shared -fPIC",
+            "compiler": "C99 -O3 -shared -fPIC",
             "elf_shared_object_path": so_path,
             "elf_binary_size_bytes": len(so_bytes),
             "elf_sha256": hashlib.sha256(so_bytes).hexdigest()[:16],
@@ -3611,6 +3726,7 @@ class RealNativeAndWasmBinaryCompiler:
     ) -> Dict[str, Any]:
         import struct
         import subprocess
+        import shutil
 
         # Build a valid IEEE-754 WebAssembly binary module (.wasm) exporting `run(f32, f32) -> f32`
         # Body: ((flux * k0) + (gain * k1)) * k2
@@ -3638,7 +3754,12 @@ class RealNativeAndWasmBinaryCompiler:
             b"\x0a" + bytes([len(code_section_payload)]) + code_section_payload
         )
 
-        wasm_path = "/tmp/omni_edge_kernel.wasm"
+        import tempfile
+
+        build_root = Path(__file__).resolve().parent / "build" / "wasm"
+        build_root.mkdir(parents=True, exist_ok=True)
+        artifact_dir = Path(tempfile.mkdtemp(prefix="omni_edge_", dir=build_root))
+        wasm_path = str(artifact_dir / "kernel.wasm")
         Path(wasm_path).write_bytes(wasm_bytes)
 
         node_js = (
@@ -3647,7 +3768,7 @@ class RealNativeAndWasmBinaryCompiler:
             f"WebAssembly.instantiate(buf).then(m=>{{console.log(m.instance.exports.run({flux},{gain}));}});"
         )
         proc = subprocess.run(
-            ["/usr/bin/node", "-e", node_js],
+            [shutil.which("node") or shutil.which("nodejs") or "node", "-e", node_js],
             check=True,
             capture_output=True,
             text=True,
@@ -3657,7 +3778,7 @@ class RealNativeAndWasmBinaryCompiler:
             "wasm_binary_path": wasm_path,
             "wasm_size_bytes": len(wasm_bytes),
             "wasm_hex_bytecode": wasm_bytes.hex(),
-            "wasm_runtime": "Node.js v18 V8 WebAssembly VM",
+            "wasm_runtime": "Node.js V8 WebAssembly VM",
             "wasm_execution_output": wasm_out,
         }
 
@@ -3672,7 +3793,7 @@ class RealEd25519CryptographicSigner:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         from cryptography.hazmat.primitives import serialization
 
-        seed_32 = hashlib.sha256(seed_tag.encode("utf-8")).digest()
+        seed_32 = signing_key_bytes(seed_tag)
         self._priv = Ed25519PrivateKey.from_private_bytes(seed_32)
         self._pub = self._priv.public_key()
         self.public_key_hex = self._pub.public_bytes(
@@ -4196,11 +4317,11 @@ class SovereignCloudComputerEngine:
     SQLite state persistence (`/tmp/omnigenesis_sovereign_cloud.sqlite3`).
     """
 
-    def __init__(self, db_path: str = "/tmp/omnigenesis_sovereign_cloud.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_sovereign_cloud.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self._init_cloud_schema()
 
     def _init_cloud_schema(self) -> None:
@@ -4321,7 +4442,7 @@ class AutonomousPaaSSelfDeployer:
     signed compute cells in `SovereignCloudComputerEngine`.
     """
 
-    DEPLOY_ROOT = Path("/tmp/omnicloud_deployments")
+    DEPLOY_ROOT = data_path("deployments")
 
     def __init__(
         self,
@@ -4335,6 +4456,7 @@ class AutonomousPaaSSelfDeployer:
         self.registry = registry
         self.catalog = catalog
         self.signer = RealEd25519CryptographicSigner("OMNICLOUD_PAAS_SELF_DEPLOY_KEY_V7")
+        self.DEPLOY_ROOT = data_path("deployments")
         self.DEPLOY_ROOT.mkdir(parents=True, exist_ok=True)
 
     def deploy_workload(
@@ -4826,11 +4948,11 @@ class AutonomousComputerUseEngine:
         "github.com",
     }
 
-    def __init__(self, db_path: str = "/tmp/omnigenesis_computer_use.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_computer_use.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self.signer = RealEd25519CryptographicSigner("OMNIGENESIS_COMPUTER_USE_AGENT_KEY_V9")
         self._init_schema()
 
@@ -5006,11 +5128,11 @@ class PersistentVectorGraphRAGEngine:
     TF-IDF token weights, persists chunks into SQLite, and executes hybrid
     (Cosine 5D Isomorphism + Lexical Overlap) retrieval with grounded citations.
     """
-    def __init__(self, db_path: str = "/tmp/omnigenesis_vector_rag.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_vector_rag.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self._init_schema()
         self._seed_foundational_corpus()
 
@@ -5161,7 +5283,9 @@ class SovereignJWTRBACAndStripeEngine:
         "AUTONOMOUS_AGENT": ["omni:read", "operators:manifest", "computer_use:actuate", "rag:query"],
     }
 
-    def __init__(self, secret_key: str = "omni_jwt_sovereign_hmac_secret_2026") -> None:
+    def __init__(self, secret_key: str) -> None:
+        if len(secret_key) < 32:
+            raise ValueError("JWT signing secret must contain at least 32 characters")
         self.secret_key = secret_key
         self.signer = RealEd25519CryptographicSigner("OMNIGENESIS_OAUTH2_JWT_AUTHORITY_V9")
 
@@ -5280,7 +5404,6 @@ class FullStackRepositoryArchiveExporter:
             "RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev nodejs && rm -rf /var/lib/apt/lists/*\n"
             "COPY . /opt/omnicloud/\n"
             "ENV PORT=8080\n"
-            "ENV STRIPE_WEBHOOK_SECRET=whsec_omni_prod_secret_key\n"
             "EXPOSE 8080\n"
             'CMD ["python3", "omnigenesis_engine.py", "--serve", "--port", "8080"]\n'
         )
@@ -5293,7 +5416,7 @@ class FullStackRepositoryArchiveExporter:
             '      - "8080:8080"\n'
             "    environment:\n"
             "      - PORT=8080\n"
-            "      - STRIPE_WEBHOOK_SECRET=whsec_omni_prod_secret_key\n"
+            "      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}\n"
             "    volumes:\n"
             "      - omni_sqlite:/tmp\n"
             "volumes:\n"
@@ -5356,6 +5479,19 @@ class FullStackRepositoryArchiveExporter:
             if hc.exists():
                 files_map["omnigenesis_dashboard.html"] = hc.read_text(encoding="utf-8")
                 break
+
+        project_root = Path(__file__).resolve().parent
+        for relative in (
+            "README.md", "Dockerfile", "docker-compose.yml", ".dockerignore", ".gitignore",
+            "requirements.txt", "requirements.lock", "requirements-dev.txt", "pyproject.toml",
+            "platform_security.py", "platform_admin.py", "main.py", ".derle/run.sh",
+            "omnigenesis_dashboard.html", "deploy/start-beta.sh",
+            "deploy/nginx-beta.conf.example", "deploy/PRIVATE_BETA.md", "scripts/verify.py",
+            "render.yaml", "deploy/RENDER.md",
+        ):
+            source = project_root / relative
+            if source.is_file():
+                files_map[relative] = source.read_text(encoding="utf-8")
 
         out_path = Path(output_zip_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5575,11 +5711,11 @@ class CausalTimeTravelDebugger:
     fork any historical cycle with counterfactual parameters (mutation rate, isomorphism
     coupling, Lyapunov damping) to compare divergent Ω-Index & IQ trajectories.
     """
-    def __init__(self, db_path: str = "/tmp/omnigenesis_timetravel_debugger.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_timetravel_debugger.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self._init_schema()
         self._seed_baseline_branches()
 
@@ -6296,11 +6432,11 @@ class AutonomousBioFoundryEngine:
         "S": "TCC", "T": "ACC", "W": "TGG", "Y": "TAC", "V": "GTG",
     }
 
-    def __init__(self, db_path: str = "/tmp/omnigenesis_biofoundry.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_biofoundry.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self.signer = RealEd25519CryptographicSigner("OMNIGENESIS_BIOFOUNDRY_BSL_GUARD_V11")
         self._init_schema()
 
@@ -6420,11 +6556,11 @@ class ConstitutionalGovernanceDAO:
         "AXIOM-03: Quadratic voting caps whale dominance via v_eff = sqrt(credits_staked) * reputation.",
     ]
 
-    def __init__(self, db_path: str = "/tmp/omnigenesis_governance_dao.sqlite3") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
         import sqlite3
-        self.db_path = db_path
+        self.db_path = db_path or str(data_path("omnigenesis_governance_dao.sqlite3"))
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = connect_database(self.db_path)
         self.signer = RealEd25519CryptographicSigner("OMNIGENESIS_CONSTITUTIONAL_DAO_KEY_V11")
         self._init_schema()
         self._seed_default_proposals()
@@ -7230,18 +7366,82 @@ class OmniSmallModelAndHFFineTuneArchitect:
         }
 
 
-def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tuple[Any, int]:
+def create_production_http_server(
+    port: int = 8080, host: str = "127.0.0.1", *,
+    api_credentials: Optional[Dict[str, str]] = None,
+    jwt_signing_secret: Optional[str] = None,
+    identity_store: Optional[IdentityStore] = None,
+) -> Tuple[Any, int]:
     """
     Creates and initializes the full-platform multi-threaded HTTP/REST/SSE backend server
     for OMNIGENESIS-Ω covering all 16 Command Deck tabs and 44 endpoints.
     """
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import hmac
+    import os
 
+    api_keys = {
+        role: os.environ.get(env_name, "")
+        for role, env_name in (
+            ("admin", "OMNIGENESIS_ADMIN_API_KEY"),
+            ("operator", "OMNIGENESIS_OPERATOR_API_KEY"),
+            ("reader", "OMNIGENESIS_READONLY_API_KEY"),
+        )
+    }
+    if api_credentials is not None:
+        api_keys = {role: api_credentials.get(role, "") for role in ("admin", "operator", "reader")}
+    configured_keys = {key: role for role, key in api_keys.items() if key}
+    allowed_origins = {
+        origin.strip() for origin in os.environ.get("OMNIGENESIS_ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    }
+    if not api_keys["admin"] or len(api_keys["admin"]) < 32:
+        raise RuntimeError("Set OMNIGENESIS_ADMIN_API_KEY to a random value of at least 32 characters")
+    if any(len(key) < 32 for key in configured_keys):
+        raise RuntimeError("Every configured API key must contain at least 32 characters")
+    if len(configured_keys) != sum(bool(key) for key in api_keys.values()):
+        raise RuntimeError("API credentials must be unique across roles")
+
+    identities = identity_store or IdentityStore()
+    limiter = RateLimiter()
+    private_beta = os.environ.get("OMNIGENESIS_PRIVATE_BETA", "0") == "1"
+    reader_get_routes = {
+        "/api/routes", "/v1/guide", "/v1/operators", "/v1/models",
+        "/v1/templates", "/v1/valuation", "/v1/partners/cloud-k8s",
+    }
+    operator_routes = {
+        "/api/converge", "/api/params", "/v1/operators/execute",
+        "/v1/frontier/physics", "/v1/frontier/prover", "/v1/frontier/neural-bridge",
+        "/v1/frontier/sensor-ingest", "/v1/omnilang/synthesize",
+        "/v1/omnilang/execute", "/v1/chat/completions", "/v1/models/infer",
+        "/v1/embeddings/isomorphic", "/v1/templates/compile",
+        "/v1/templates/flagship/repurposing", "/v1/templates/flagship/document-intake",
+        "/v1/science/discover", "/v1/quantum/transpile", "/v1/edge/transpile",
+        "/v1/webgpu/transpile", "/v1/zkml/prove", "/v1/wasm/execute",
+        "/v1/pqc/encapsulate", "/v1/realtime/frame", "/v1/ollama/swarm-infer",
+    }
+    admin_only_routes = {
+        "/api/state", "/api/snapshot", "/api/self-test", "/api/reset",
+        "/api/snapshot/restore", "/api/params", "/api/converge",
+        "/v1/factory/train", "/v1/factory/rlvr-dataset", "/v1/frontier/vault",
+        "/v1/frontier/p2p-broadcast", "/v1/frontier/run-all", "/v1/models/spawn",
+        "/v1/templates/flagship/lead-to-client",
+        "/v1/saas/tenants/provision", "/v1/saas/stripe-webhook", "/v1/saas/connectors/verify",
+        "/v1/terminal/exec", "/v1/cloud/deploy-artifact", "/v1/cloud/cluster-sync",
+        "/v1/computer-use/actuate", "/v1/knowledge/ingest", "/v1/knowledge/query",
+        "/v1/auth/token", "/v1/auth/verify", "/v1/billing/checkout-session",
+        "/v1/mcp/rpc", "/v1/replay/fork", "/v1/redteam/campaign",
+        "/v1/finops/route", "/v1/economy/settle", "/v1/economy/state",
+        "/v1/finops/ledger", "/v1/collab/publish", "/v1/collab/state",
+        "/v1/export/archive-manifest", "/v1/packaging/export", "/v1/cloud/telemetry",
+        "/v1/cloud/bootstrap.sh", "/metrics", "/v1/stream/events",
+    }
     state_lock = threading.RLock()
     engine = OmniGenesisSingularityCore(goal="Synthesize room-temperature topological superconductor lattice & autonomous planetary grid homeostasis")
     engine.execute_full_convergence(cycles=2)
     forge = OmniLangCompilerAndAppForge()
     prod_db = OmniGenesisProductionDB()
+    prod_db.restore_core(engine)
     registry = OmniPlatformModelRegistry(engine)
     registry.spawn_custom_model_from_platform("omni-surrogate-distilled-v1", "Sub-ms Eigenvalue & RLVR Scoring")
     template_catalog = OmniEnterpriseTemplateCatalog()
@@ -7261,7 +7461,10 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
     computer_use_engine = AutonomousComputerUseEngine()
     collab_bus = CollaborativeSwarmSyncBus()
     rag_engine = PersistentVectorGraphRAGEngine()
-    jwt_stripe_engine = SovereignJWTRBACAndStripeEngine()
+    jwt_secret = jwt_signing_secret if jwt_signing_secret is not None else os.environ.get("OMNIGENESIS_JWT_SECRET", "")
+    if len(jwt_secret) < 32:
+        raise RuntimeError("Set OMNIGENESIS_JWT_SECRET to a random value of at least 32 characters")
+    jwt_stripe_engine = SovereignJWTRBACAndStripeEngine(secret_key=jwt_secret)
     mcp_server = OmniMCPProtocolServer(engine, rag_engine, computer_use_engine)
     timetravel_debugger = CausalTimeTravelDebugger()
     redteam_arena = AdversarialChaosRedTeamEngine(engine)
@@ -7392,6 +7595,30 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
         "POST /v1/huggingface/grpo-reward          -> Score completion via Step 43 GRPO Verifiable Reward Fn",
     ]
 
+    ALL_ROUTES.extend([
+        "GET  /api/auth/me -> Current user",
+        "POST /api/auth/logout -> Revoke the current session",
+        "GET  /api/routes -> List registered API routes",
+        "GET  /v1/guide -> Platform workflow guide",
+        "POST /v1/models/infer -> Infer using the model in the request body",
+    ])
+    registered_routes = {
+        (parts[0], parts[1])
+        for route in ALL_ROUTES
+        if len(parts := route.split()) >= 2 and parts[0] in {"GET", "POST"}
+    }
+    registered_routes.update({
+        ("GET", path) for path in (
+            "/api/state", "/api/routes", "/api/self-test", "/api/snapshot",
+            "/api/health", "/v1/guide",
+        )
+    })
+    registered_routes.update({
+        ("POST", path) for path in (
+            "/v1/models/infer", "/api/converge", "/api/reset", "/api/params", "/api/snapshot/restore",
+        )
+    })
+
     def build_unified_state() -> Dict[str, Any]:
         with state_lock:
             ops_list = [
@@ -7418,7 +7645,6 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                 "latest_cycle_report": latest_cycle,
                 "operators": ops_list,
                 "models": [dataclasses.asdict(m) for m in registry.models.values()],
-                "saas": saas_platform.get_saas_Summary(),
                 "economy": {
                     "protocol_treasury_balance": agent_economy.protocol_treasury_balance,
                     "total_settled_volume_credits": agent_economy.total_settled_volume_credits,
@@ -7434,32 +7660,164 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                 "rag_summary": rag_engine.query_knowledge_graph("room-temperature superconductor HVDC lattice", top_k=2),
             }
 
+    def isolated_self_test():
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="omnigenesis-self-test-") as temporary:
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), "--self-test"],
+                env={**os.environ, "OMNIGENESIS_DATA_DIR": temporary},
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode:
+                raise RuntimeError("Isolated verification suite failed")
+            return json.loads(result.stdout)
+
     class OmniAPIHandler(BaseHTTPRequestHandler):
+        timeout = 10
+
+        def setup(self) -> None:
+            super().setup()
+            self.connection.settimeout(self.timeout)
+
         def log_message(self, format: str, *args: Any) -> None:
             pass  # Keep console clean during high-frequency polling/tests
 
+        def end_headers(self) -> None:
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
+        def _authorized(self, clean_path: str, method: str) -> bool:
+            authorization = self.headers.get("Authorization", "")
+            supplied_key = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+            self.authenticated_tenant_id = None
+            identity = identities.authenticate(supplied_key)
+            self.authenticated_username = identity["username"] if identity else None
+            role = identity["role"] if identity else next(
+                (candidate for key, candidate in configured_keys.items() if hmac.compare_digest(supplied_key, key)),
+                None,
+            )
+            if role is None and supplied_key:
+                self.authenticated_tenant_id = saas_platform.tenant_for_api_key(supplied_key)
+                if self.authenticated_tenant_id:
+                    role = "tenant"
+            if role is None:
+                self._send_json({"error": "Login or a valid bearer credential is required"}, status=401)
+                return False
+            if private_beta and clean_path.startswith("/v1/saas/"):
+                self._send_json({"error": "Multi-tenant SaaS is unavailable in the single-tenant private beta"}, status=503)
+                return False
+            if (method, clean_path) in {("GET", "/api/auth/me"), ("POST", "/api/auth/logout")}:
+                return True
+            route_match = (method, clean_path) in registered_routes
+            if method == "POST" and clean_path.startswith("/v1/models/") and clean_path.endswith("/infer"):
+                route_match = ("POST", "/v1/models/<model_id>/infer") in registered_routes
+            if method == "GET" and clean_path.startswith("/cloud/apps/"):
+                route_match = role == "admin"
+            if not route_match:
+                self._send_json({"error": "Route not found"}, status=404)
+                return False
+            if role == "tenant":
+                tenant_routes = {
+                    ("GET", "/v1/saas/summary"),
+                    ("POST", "/v1/saas/wedge-execute"),
+                    ("POST", "/v1/saas/approvals/resolve"),
+                }
+                if (method, clean_path) not in tenant_routes:
+                    self._send_json({"error": "Tenant key is not authorized for this route"}, status=403)
+                    return False
+            if role == "reader" and (method != "GET" or clean_path not in reader_get_routes):
+                self._send_json({"error": "Reader key is not authorized for this route"}, status=403)
+                return False
+            if role == "operator" and (
+                clean_path not in operator_routes | reader_get_routes
+                or (method, clean_path) not in registered_routes
+            ):
+                self._send_json({"error": "Operator key is not authorized for this route"}, status=403)
+                return False
+            if clean_path in admin_only_routes and role != "admin":
+                self._send_json({"error": "Admin role required"}, status=403)
+                return False
+            return True
+
         def _send_cors_headers(self) -> None:
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+            origin = self.headers.get("Origin", "")
+            if origin and (origin == f"http://{self.headers.get('Host', '')}" or origin in allowed_origins):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
         def _send_json(self, payload: Dict[str, Any], status: int = 200) -> None:
+            if self.command == "POST" and status < 400 and self.path.split("?", 1)[0] not in ("/api/auth/login", "/api/auth/logout"):
+                with state_lock:
+                    prod_db.sync_core(engine)
+            audit_event(method=self.command, path=self.path.split("?", 1)[0][:200], status=status,
+                        username=getattr(self, "authenticated_username", None))
             raw = json.dumps(payload, indent=2).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            if status == 429:
+                self.send_header("Retry-After", "60")
             self._send_cors_headers()
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
 
         def do_OPTIONS(self) -> None:
+            origin = self.headers.get("Origin", "")
+            if origin and origin != f"http://{self.headers.get('Host', '')}" and origin not in allowed_origins:
+                self.send_response(403)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             self.send_response(204)
             self._send_cors_headers()
             self.send_header("Content-Length", "0")
             self.end_headers()
 
+        def do_PUT(self) -> None:
+            self._send_json({"error": "Method not allowed"}, status=405)
+
+        def do_DELETE(self) -> None:
+            self._send_json({"error": "Method not allowed"}, status=405)
+
+        def do_PATCH(self) -> None:
+            self._send_json({"error": "Method not allowed"}, status=405)
+
+        def _handle_request(self, handler) -> None:
+            try:
+                path = self.path.split("?", 1)[0]
+                if not limiter.allow(("request", self.client_address[0]), limit=240):
+                    self._send_json({"error": "Request limit exceeded; retry later"}, status=429)
+                    return
+                if self.command == "POST" and path == "/api/auth/login" and not limiter.allow(("login", self.client_address[0]), limit=10):
+                    self._send_json({"error": "Login limit exceeded; retry later"}, status=429)
+                    return
+                handler()
+            except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
+                self._send_json({"error": "Invalid request parameters", "detail": str(exc)}, status=400)
+            except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                return
+            except Exception as exc:
+                print(f"API request failed: {type(exc).__name__}", flush=True)
+                self._send_json({"error": "Request failed; check server logs and installed dependencies"}, status=500)
+
         def do_GET(self) -> None:
+            self._handle_request(self._do_GET)
+
+        def do_POST(self) -> None:
+            self._handle_request(self._do_POST)
+
+        def _do_GET(self) -> None:
             clean_path = self.path.split("?", 1)[0]
+            if clean_path not in ("/", "/dashboard", "/index.html", "/api/health") and not self._authorized(clean_path, "GET"):
+                return
             if clean_path in ("/", "/dashboard", "/index.html"):
                 candidates = [
                     Path("OMNIGENESIS-Ω _ 5th-Paradigm Hyper-Intelligence Command Deck.html"),
@@ -7478,20 +7836,16 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                         return
                 self._send_json({"status": "ONLINE", "routes": ALL_ROUTES})
             elif clean_path == "/api/health":
-                self._send_json({
-                    "status": "ONLINE",
-                    "system": "OMNIGENESIS-Ω v8.0 Production Full-Stack Backend & API Gateway",
-                    "models_registered": list(registry.models.keys()),
-                    "operators_loaded": len(engine.manifest_engine.registry),
-                    "meta_weights": engine.meta_weights,
-                    "total_routes": len(ALL_ROUTES),
-                })
+                self._send_json({"status": "ok"})
+            elif clean_path == "/api/auth/me":
+                token = self.headers.get("Authorization", "")[7:].strip()
+                self._send_json(identities.authenticate(token) or {"role": "service", "username": None})
             elif clean_path == "/api/state":
                 self._send_json(build_unified_state())
             elif clean_path == "/api/routes":
                 self._send_json({"total_routes": len(ALL_ROUTES), "routes": ALL_ROUTES})
             elif clean_path == "/api/self-test":
-                self._send_json(run_production_self_test())
+                self._send_json(isolated_self_test())
             elif clean_path == "/api/snapshot":
                 self._send_json(build_unified_state())
             elif clean_path == "/v1/guide":
@@ -7525,7 +7879,20 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                     "templates": template_catalog.list_templates(),
                 })
             elif clean_path == "/v1/saas/summary":
-                self._send_json(saas_platform.get_saas_Summary())
+                tenant_id = getattr(self, "authenticated_tenant_id", None)
+                if tenant_id:
+                    summary = saas_platform.get_saas_Summary(tenant_id)
+                    summary["leads_pipeline"] = [
+                        {key: lead[key] for key in ("lead_id", "company_name", "stage", "approval_status")}
+                        for lead in summary["leads_pipeline"]
+                    ]
+                    summary["approval_queue"] = [
+                        {key: approval[key] for key in ("approval_id", "workflow_type", "requested_action", "status")}
+                        for approval in summary["approval_queue"]
+                    ]
+                    self._send_json(summary)
+                else:
+                    self._send_json(saas_platform.get_saas_Summary())
             elif clean_path == "/v1/packaging/export":
                 self._send_json(ModelPackagingAndFineTunePipeline(registry).generate_packaging_bundle())
             elif clean_path == "/v1/valuation":
@@ -7550,14 +7917,17 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                 self.end_headers()
                 self.wfile.write(prom_txt)
             elif clean_path == "/v1/stream/events":
-                sse_txt = PrometheusAndSSETelemetryExporter.build_sse_event_frame(engine).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
                 self._send_cors_headers()
-                self.send_header("Content-Length", str(len(sse_txt)))
                 self.end_headers()
-                self.wfile.write(sse_txt)
+                while not self.server.stop_event.is_set():
+                    with state_lock:
+                        frame = PrometheusAndSSETelemetryExporter.build_sse_event_frame(engine)
+                    self.wfile.write(frame.encode("utf-8"))
+                    self.wfile.flush()
+                    if self.server.stop_event.wait(1.0):
+                        break
             elif clean_path == "/v1/sdk/manifest":
                 self._send_json(PythonSDKPackageGenerator.get_sdk_manifest())
             elif clean_path == "/v1/collab/state":
@@ -7604,7 +7974,10 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                 self.wfile.write(raw_sh)
             elif clean_path.startswith("/cloud/apps/"):
                 slug = clean_path.split("/cloud/apps/", 1)[-1].strip("/")
-                html_file = AutonomousPaaSSelfDeployer.DEPLOY_ROOT / slug / "index.html"
+                if not slug or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for c in slug):
+                    self._send_json({"error": "Invalid app identifier"}, status=400)
+                    return
+                html_file = paas_deployer.DEPLOY_ROOT / slug / "index.html"
                 if html_file.exists():
                     raw_html = html_file.read_bytes()
                     self.send_response(200)
@@ -7616,17 +7989,46 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                 else:
                     self._send_json({"error": f"Cloud app '{slug}' not found"}, status=404)
             else:
-                self._send_json({"routes": ALL_ROUTES})
+                self._send_json({"error": "Route not found"}, status=404)
 
-        def do_POST(self) -> None:
+        def _do_POST(self) -> None:
+            self.connection.settimeout(10)
             clean_path = self.path.split("?", 1)[0]
-            length = int(self.headers.get("Content-Length", "0"))
+            if clean_path != "/api/auth/login" and not self._authorized(clean_path, "POST"):
+                return
+            if self.headers.get_content_type() != "application/json":
+                self._send_json({"error": "Content-Type must be application/json"}, status=415)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "-1"))
+            except ValueError:
+                self._send_json({"error": "Invalid Content-Length"}, status=400)
+                return
+            if length < 0:
+                self._send_json({"error": "Invalid Content-Length"}, status=400)
+                return
+            if length > 1024 * 1024:
+                self._send_json({"error": "Request body exceeds 1 MiB limit"}, status=413)
+                return
             raw_bytes = self.rfile.read(length) if length > 0 else b"{}"
             try:
                 body = json.loads(raw_bytes.decode("utf-8") or "{}")
-            except Exception:
-                body = {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._send_json({"error": "Request body must contain valid JSON"}, status=400)
+                return
+            if not isinstance(body, dict):
+                self._send_json({"error": "Request JSON must be an object"}, status=400)
+                return
 
+            if clean_path == "/api/auth/login":
+                result = identities.login(body.get("username", ""), body.get("password", ""))
+                self.authenticated_username = result["username"] if result else None
+                self._send_json(result or {"error": "Invalid username or password"}, status=200 if result else 401)
+                return
+            if clean_path == "/api/auth/logout":
+                identities.logout(self.headers.get("Authorization", "")[7:].strip())
+                self._send_json({"status": "logged_out"})
+                return
             with state_lock:
                 if clean_path == "/api/converge":
                     if "goal" in body and body["goal"]:
@@ -7651,7 +8053,7 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                             tuning_params[k] = float(body[k])
                     self._send_json({"tuning_params": tuning_params, "meta_weights": engine.meta_weights})
                 elif clean_path == "/api/self-test":
-                    self._send_json(run_production_self_test())
+                    self._send_json(isolated_self_test())
                 elif clean_path == "/api/snapshot/restore":
                     if "omegaIndex" in body:
                         engine.meta_weights["emergent_omega_quotient"] = float(body["omegaIndex"])
@@ -7691,6 +8093,8 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                     })
                 elif clean_path == "/v1/factory/train":
                     epochs = int(body.get("epochs", 50))
+                    if not 1 <= epochs <= 1000:
+                        raise ValueError("epochs must be between 1 and 1000")
                     factory = AutopoieticModelFactory(engine)
                     stats = factory.train_surrogate_neural_model(epochs=epochs)
                     rlvr = factory.export_rlvr_dataset()
@@ -7783,7 +8187,10 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                     })
                 elif clean_path == "/v1/chat/completions":
                     model_id = body.get("model", "omni-genesis-1-core")
-                    mod = registry.models.get(model_id, registry.models["omni-genesis-1-core"])
+                    mod = registry.models.get(model_id)
+                    if mod is None:
+                        self._send_json({"error": "Model not found", "model": model_id}, status=404)
+                        return
                     inf = mod.infer([0.94, 0.88])
                     latest_op = list(engine.manifest_engine.registry.values())[-1]
                     self._send_json({
@@ -7812,12 +8219,18 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                 elif clean_path.startswith("/v1/models/") and clean_path.endswith("/infer"):
                     parts = clean_path.strip("/").split("/")
                     model_id = parts[2] if len(parts) >= 4 else body.get("model", "omni-genesis-1-core")
-                    mod = registry.models.get(model_id, registry.models["omni-genesis-1-core"])
+                    mod = registry.models.get(model_id)
+                    if mod is None:
+                        self._send_json({"error": "Model not found", "model": model_id}, status=404)
+                        return
                     vec = body.get("input_vector", [0.94, 0.88])
                     self._send_json(mod.infer(vec))
                 elif clean_path == "/v1/models/infer":
                     model_id = body.get("model", "omni-genesis-1-core")
-                    mod = registry.models.get(model_id, registry.models["omni-genesis-1-core"])
+                    mod = registry.models.get(model_id)
+                    if mod is None:
+                        self._send_json({"error": "Model not found", "model": model_id}, status=404)
+                        return
                     vec = body.get("input_vector", [0.94, 0.88])
                     self._send_json(mod.infer(vec))
                 elif clean_path == "/v1/models/spawn":
@@ -7870,35 +8283,54 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                     )
                     self._send_json(res)
                 elif clean_path == "/v1/saas/wedge-execute":
-                    api_key = self.headers.get("Authorization", "").replace("Bearer ", "") or body.get("api_key", "sk-live-omni-aetherion-9941")
-                    res = saas_platform.execute_commercial_lead_wedge(
-                        api_key=api_key,
-                        company_name=body.get("company_name", "New Enterprise Lead"),
-                        contact_email=body.get("contact_email", "exec@enterprise.io"),
-                        deal_value_usd=float(body.get("deal_value_usd", 75000.0)),
-                        auto_approve=bool(body.get("auto_approve", False)),
-                    )
-                    self._send_json({"wedge_result": res, "saas_summary": saas_platform.get_saas_Summary()})
+                    authorization = self.headers.get("Authorization", "")
+                    api_key = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+                    if not api_key or saas_platform.tenant_for_api_key(api_key) != self.authenticated_tenant_id:
+                        self._send_json({"error": "A valid tenant API key is required"}, status=401)
+                        return
+                    try:
+                        res = saas_platform.execute_commercial_lead_wedge(
+                            api_key=api_key,
+                            company_name=body.get("company_name"),
+                            contact_email=body.get("contact_email"),
+                            deal_value_usd=float(body.get("deal_value_usd")),
+                        )
+                    except (TypeError, ValueError):
+                        self._send_json({"error": "INVALID_LEAD_INPUT"}, status=400)
+                        return
+                    if not res.get("auth_and_metering", {}).get("authenticated"):
+                        error = res.get("error") or res.get("auth_and_metering", {}).get("error", "UNAUTHORIZED")
+                        status = 402 if error == "INSUFFICIENT_CREDITS" else 400 if error == "INVALID_LEAD_INPUT" else 401
+                        self._send_json({"error": error}, status=status)
+                    else:
+                        self._send_json({
+                            "lead_id": res["lead_id"],
+                            "approval_id": res["approval_id"],
+                            "stage": res["stage"],
+                            "approval_status": res["approval_status"],
+                        })
                 elif clean_path == "/v1/saas/tenants/provision":
-                    ten = saas_platform.provision_tenant(
-                        org_name=body.get("org_name", "NovaBio Therapeutics"),
-                        plan_tier=body.get("plan_tier", "ENTERPRISE_OS"),
-                        monthly_mrr_usd=float(body.get("monthly_mrr_usd", 2499.0)),
-                        credits=int(body.get("credits", 25000)),
-                    )
-                    self._send_json({"tenant": ten, "saas_summary": saas_platform.get_saas_Summary()})
+                    try:
+                        ten = saas_platform.provision_tenant(
+                            org_name=body.get("org_name"),
+                            plan_tier=body.get("plan_tier", "STARTER_PRO"),
+                            monthly_mrr_usd=float(body.get("monthly_mrr_usd", 0)),
+                            credits=int(body.get("credits", 0)),
+                        )
+                    except (TypeError, ValueError):
+                        self._send_json({"error": "INVALID_TENANT_INPUT"}, status=400)
+                        return
+                    self._send_json({"tenant": ten})
                 elif clean_path == "/v1/saas/approvals/resolve":
-                    appr = saas_platform.resolve_approval_gate(
-                        approval_id=body.get("approval_id", "appr_101"),
-                        decision=body.get("decision", "APPROVED"),
+                    resolution = saas_platform.resolve_approval_gate(
+                        approval_id=str(body.get("approval_id", "")),
+                        decision=str(body.get("decision", "")),
+                        tenant_id=self.authenticated_tenant_id,
                     )
-                    self._send_json({"resolution": appr, "saas_summary": saas_platform.get_saas_Summary()})
+                    status = 404 if resolution.get("error") == "APPROVAL_NOT_FOUND_OR_ALREADY_RESOLVED" else 400 if resolution.get("error") else 200
+                    self._send_json(resolution, status=status)
                 elif clean_path == "/v1/saas/stripe-webhook":
-                    wh = saas_platform.process_stripe_webhook(
-                        credit_topup=int(body.get("credit_topup", 5000)),
-                        event_type=body.get("event_type", "invoice.paid"),
-                    )
-                    self._send_json({"webhook": wh, "saas_summary": saas_platform.get_saas_Summary()})
+                    self._send_json({"error": "Verified Stripe event handling is not configured"}, status=503)
                 elif clean_path == "/v1/saas/connectors/verify":
                     self._send_json({
                         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -8021,10 +8453,7 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                     )
                     self._send_json(gtm_res)
                 elif clean_path == "/v1/terminal/exec":
-                    cmd_res = smart_terminal.execute_terminal_command(
-                        raw_command=body.get("command", "omni cloud status")
-                    )
-                    self._send_json(cmd_res)
+                    self._send_json({"error": "Remote host command execution is disabled"}, status=503)
                 elif clean_path == "/v1/cloud/deploy-artifact":
                     dep_res = paas_deployer.deploy_workload(
                         workload_type=body.get("workload_type", "OMNILANG_APP"),
@@ -8068,13 +8497,7 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                     )
                     self._send_json(q_res)
                 elif clean_path == "/v1/auth/token":
-                    tok_res = jwt_stripe_engine.issue_jwt_token(
-                        subject=body.get("subject", "exec@aetherion.io"),
-                        tenant_id=body.get("tenant_id", "tenant_aetherion"),
-                        role=body.get("role", "SOVEREIGN_ADMIN"),
-                        ttl_seconds=int(body.get("ttl_seconds", 3600)),
-                    )
-                    self._send_json(tok_res)
+                    self._send_json({"error": "Identity-provider-backed token issuance is not configured"}, status=503)
                 elif clean_path == "/v1/auth/verify":
                     ver_res = jwt_stripe_engine.verify_jwt_token(
                         token=body.get("token", ""),
@@ -8082,13 +8505,7 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
                     )
                     self._send_json(ver_res)
                 elif clean_path == "/v1/billing/checkout-session":
-                    chk_res = jwt_stripe_engine.create_stripe_checkout_session(
-                        tenant_id=body.get("tenant_id", "tenant_aetherion"),
-                        plan_tier=body.get("plan_tier", "ENTERPRISE_OS"),
-                        seats=int(body.get("seats", 25)),
-                        success_url=body.get("success_url", "https://portal.aetherion.io/billing/success"),
-                    )
-                    self._send_json(chk_res)
+                    self._send_json({"error": "Verified Stripe checkout integration is not configured"}, status=503)
                 elif clean_path == "/v1/mcp/rpc":
                     self._send_json(mcp_server.handle_jsonrpc(body))
                 elif clean_path == "/v1/replay/fork":
@@ -8199,6 +8616,41 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
 
     class ReusableThreadingHTTPServer(ThreadingHTTPServer):
         allow_reuse_address = True
+        daemon_threads = True
+        request_queue_size = 32
+
+        def __init__(self, *args, **kwargs):
+            self.request_slots = threading.BoundedSemaphore(16)
+            self.stop_event = threading.Event()
+            super().__init__(*args, **kwargs)
+
+        def process_request(self, request, client_address):
+            if not self.request_slots.acquire(blocking=False):
+                try:
+                    request.sendall(b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+                finally:
+                    self.shutdown_request(request)
+                return
+            try:
+                super().process_request(request, client_address)
+            except Exception:
+                self.request_slots.release()
+                raise
+
+        def process_request_thread(self, request, client_address):
+            try:
+                super().process_request_thread(request, client_address)
+            finally:
+                self.request_slots.release()
+
+        def shutdown(self):
+            self.stop_event.set()
+            super().shutdown()
+
+        def server_close(self):
+            super().server_close()
+            if identity_store is None:
+                identities.close()
 
     server = ReusableThreadingHTTPServer((host, port), OmniAPIHandler)
     actual_port = server.server_address[1]
@@ -8206,10 +8658,19 @@ def create_production_http_server(port: int = 8080, host: str = "0.0.0.0") -> Tu
 
 
 def run_production_http_server(port: int = 8080) -> None:
-    """Launches the multi-threaded HTTP/REST/SSE Backend Server for OMNIGENESIS-Ω."""
-    server, actual_port = create_production_http_server(port=port)
-    print(f"OMNIGENESIS-Ω Unified Full-Stack Backend listening on http://0.0.0.0:{actual_port}")
-    server.serve_forever()
+    """Launch the HTTP API on the configured network interface."""
+    import os
+
+    host = os.environ.get("OMNIGENESIS_BIND_HOST", "127.0.0.1")
+    server, actual_port = create_production_http_server(port=port, host=host)
+    print(f"OMNIGENESIS-Ω API listening on http://{host}:{actual_port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stop_event.set()
+        server.server_close()
 
 
 def print_step_by_step_guide() -> None:
