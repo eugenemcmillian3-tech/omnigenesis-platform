@@ -1,0 +1,17 @@
+[Unit]
+Description=OMNIGENESIS-Ω Sovereign Cloud Computer & PaaS Hypervisor (OmniCloud-Ω)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/omnicloud
+ExecStartPre=/usr/bin/python3 /opt/omnicloud/omnigenesis_engine.py --self-test
+ExecStart=/usr/bin/python3 /opt/omnicloud/omnigenesis_engine.py --serve --port 8080
+Restart=always
+RestartSec=3
+Environment=OMNIGENESIS_ENV=production
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

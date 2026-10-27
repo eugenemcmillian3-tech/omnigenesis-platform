@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  omnigenesis-core:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - STRIPE_WEBHOOK_SECRET=whsec_omni_prod_secret_key
+    volumes:
+      - omni_sqlite:/tmp
+volumes:
+  omni_sqlite:
