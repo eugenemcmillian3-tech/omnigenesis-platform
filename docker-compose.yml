@@ -2,12 +2,34 @@ version: "3.9"
 services:
   omnigenesis-core:
     build: .
+    restart: unless-stopped
+    init: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       - PORT=8080
-      - STRIPE_WEBHOOK_SECRET=whsec_omni_prod_secret_key
+      - OMNIGENESIS_PRIVATE_BETA=1
+      - OMNIGENESIS_BIND_HOST=0.0.0.0
+      - OMNIGENESIS_DATA_DIR=/var/lib/omnigenesis
+      - OMNIGENESIS_ADMIN_API_KEY=${OMNIGENESIS_ADMIN_API_KEY:?Set a random admin key of at least 32 characters}
+      - OMNIGENESIS_OPERATOR_API_KEY=${OMNIGENESIS_OPERATOR_API_KEY:-}
+      - OMNIGENESIS_READONLY_API_KEY=${OMNIGENESIS_READONLY_API_KEY:-}
+      - OMNIGENESIS_JWT_SECRET=${OMNIGENESIS_JWT_SECRET:?Set a random JWT secret of at least 32 characters}
+      - OMNIGENESIS_ALLOWED_ORIGINS=${OMNIGENESIS_ALLOWED_ORIGINS:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
     volumes:
-      - omni_sqlite:/tmp
+      - omni_data:/var/lib/omnigenesis
 volumes:
-  omni_sqlite:
+  omni_data:

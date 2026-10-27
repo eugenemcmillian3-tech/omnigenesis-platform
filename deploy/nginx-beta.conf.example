@@ -1,0 +1,46 @@
+# Include inside nginx's http context. Replace beta.example.com and certificate paths.
+# Keep the backend on host loopback; this proxy is intended to run on that same host.
+limit_req_zone $binary_remote_addr zone=beta_requests:10m rate=4r/s;
+limit_req_zone $binary_remote_addr zone=beta_login:10m rate=5r/m;
+limit_conn_zone $binary_remote_addr zone=beta_connections:10m;
+
+server {
+    listen 80;
+    server_name beta.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name beta.example.com;
+    ssl_certificate /etc/letsencrypt/live/beta.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/beta.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    client_max_body_size 1m;
+    client_body_timeout 10s;
+    limit_req_status 429;
+    limit_conn beta_connections 20;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    # Restrict the private beta to a VPN or explicit address allowlist before launch.
+
+    location = /api/auth/login {
+        limit_req zone=beta_login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 15s;
+    }
+    location / {
+        limit_req zone=beta_requests burst=20 nodelay;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 180s;
+    }
+}
