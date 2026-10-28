@@ -9,9 +9,9 @@ services:
     dockerContext: .
     autoDeployTrigger: "off"
     healthCheckPath: /api/health
-    # Keep traffic disabled until host validation and access restrictions are ready.
+    # Preserve the current public login page during Blueprint syncs.
     maintenanceMode:
-      enabled: true
+      enabled: false
     disk:
       name: omnigenesis-beta-data
       mountPath: /var/lib/omnigenesis

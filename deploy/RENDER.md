@@ -2,7 +2,8 @@
 
 The root `render.yaml` prepares one paid Docker web service with a 1 GB persistent disk,
 private-beta mode, generated service secrets, health checks, and manual deploys.
-It starts in maintenance mode so an unvalidated staging instance does not accept users.
+The current service exposes its authenticated login page. For a new staging service,
+set `maintenanceMode.enabled: true` while completing host and access validation.
 No provider resources are created by adding these files.
 
 ## Create staging
@@ -21,7 +22,7 @@ No provider resources are created by adding these files.
 5. Retrieve `/var/lib/omnigenesis/data/bootstrap-admin.txt` using Render's service shell.
    Change the initial password with `python3 platform_admin.py set-password admin`.
    Keep credentials out of screenshots, issue trackers, and build logs.
-6. Before disabling maintenance mode, complete the private-beta access restriction and
+6. For a new service held in maintenance mode, complete the private-beta access restriction and
    application-server review described below. When ready, change `maintenanceMode.enabled`
    to `false` and sync the Blueprint. Render assigns an HTTPS `onrender.com` address;
    a custom domain can be added later.
