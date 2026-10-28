@@ -38,6 +38,56 @@ class SecurityStoreTests(unittest.TestCase):
         self.store.logout(token)
         self.assertIsNone(self.store.authenticate(token))
 
+    def test_owner_setup_requires_key_and_is_one_time(self):
+        key = 'owner-setup-' + 'z' * 40
+        self.assertTrue(self.store.setup_available(key))
+        self.assertIsNone(self.store.setup_owner('owner@example.com', 'a long owner password', 'wrong', key))
+        self.assertIsNone(self.store.setup_owner('owner@example.com', 'a long owner password', '', ''))
+        result = self.store.setup_owner('Owner@Example.com', 'a long owner password', key, key)
+        self.assertEqual(result['username'], 'owner@example.com')
+        self.assertEqual(len(result['recovery_codes']), 8)
+        self.assertEqual(self.store.login('owner@example.com', 'a long owner password')['role'], 'admin')
+        self.assertFalse(self.store.setup_available(key))
+        self.assertIsNone(self.store.setup_owner('attacker@example.com', 'a long owner password', key, key))
+        reopened = IdentityStore()
+        try:
+            self.assertFalse(reopened.setup_available(key))
+        finally:
+            reopened.close()
+
+    def test_recovery_revokes_sessions_and_all_previous_codes(self):
+        key = 'owner-setup-' + 'z' * 40
+        setup = self.store.setup_owner('owner@example.com', 'a long owner password', key, key)
+        token = self.store.login('owner@example.com', 'a long owner password')['access_token']
+        first, second = setup['recovery_codes'][:2]
+        stored = [row[0] for row in self.store.connection.execute('SELECT code_hash FROM recovery_codes')]
+        self.assertNotIn(first, stored)
+        self.assertIsNone(self.store.recover_password('missing@example.com', first, 'a changed owner password'))
+        self.assertIsNone(self.store.recover_password('owner@example.com', 'wrong', 'a changed owner password'))
+        result = self.store.recover_password('OWNER@example.com', first, 'a changed owner password')
+        self.assertEqual(len(result['recovery_codes']), 8)
+        self.assertIsNone(self.store.authenticate(token))
+        self.assertIsNone(self.store.login('owner@example.com', 'a long owner password'))
+        self.assertIsNotNone(self.store.login('owner@example.com', 'a changed owner password'))
+        for code in [first, second]:
+            self.assertIsNone(self.store.recover_password('owner@example.com', code, 'another owner password'))
+
+    def test_disabled_account_cannot_recover(self):
+        key = 'owner-setup-' + 'z' * 40
+        setup = self.store.setup_owner('owner@example.com', 'a long owner password', key, key)
+        self.store.disable_user('owner@example.com')
+        self.assertIsNone(self.store.recover_password('owner@example.com', setup['recovery_codes'][0], 'a changed owner password'))
+
+    def test_password_change_requires_current_password(self):
+        self.store.create_user('alice', 'original user password')
+        token = self.store.login('alice', 'original user password')['access_token']
+        self.assertIsNone(self.store.change_password('alice', 'wrong', 'replacement user password'))
+        self.assertIsNotNone(self.store.authenticate(token))
+        result = self.store.change_password('alice', 'original user password', 'replacement user password')
+        self.assertEqual(len(result['recovery_codes']), 8)
+        self.assertIsNone(self.store.authenticate(token))
+        self.assertEqual(self.store.login('alice', 'replacement user password')['role'], 'reader')
+
     def test_expired_sessions_are_rejected(self):
         self.store.create_user('alice', 'a long enough password')
         token = self.store.login('alice', 'a long enough password')['access_token']
@@ -145,6 +195,49 @@ class SecurityStoreTests(unittest.TestCase):
         self.assertEqual(set(restored.manifest_engine.registry), set(core.manifest_engine.registry))
 
 
+class BrowserOwnerSetupTests(unittest.TestCase):
+    def test_http_setup_requires_owner_proof_and_cannot_be_repeated(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+                'OMNIGENESIS_DATA_DIR': directory, 'OMNIGENESIS_PRIVATE_BETA': '1',
+                'OMNIGENESIS_ACCOUNT_SETUP_KEY': 'setup-test-' + 'z' * 40}):
+            server, port = create_production_http_server(
+                port=0, api_credentials={'admin': 'setup-service-' + 'a' * 40},
+                jwt_signing_secret='setup-jwt-' + 'b' * 40)
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            def request(path, body=None):
+                req = urllib.request.Request(f'http://127.0.0.1:{port}' + path,
+                    data=json.dumps(body).encode() if body is not None else None,
+                    headers={'Content-Type': 'application/json'})
+                try:
+                    response = urllib.request.urlopen(req, timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    return response.status, json.load(response)
+            try:
+                self.assertTrue(request('/api/auth/config')[1]['setup_available'])
+                payload = {'email': 'owner@example.com', 'password': 'a browser owner password',
+                           'setup_key': 'incorrect'}
+                self.assertEqual(request('/api/auth/setup', payload)[0], 400)
+                payload['setup_key'] = os.environ['OMNIGENESIS_ACCOUNT_SETUP_KEY']
+                status, result = request('/api/auth/setup', payload)
+                self.assertEqual(status, 200)
+                self.assertEqual(len(result['recovery_codes']), 8)
+                self.assertFalse(request('/api/auth/config')[1]['setup_available'])
+                self.assertEqual(request('/api/auth/setup', payload)[0], 400)
+                status, login = request('/api/auth/login', {'username': 'owner@example.com', 'password': payload['password']})
+                self.assertEqual(status, 200)
+                self.assertEqual(login['role'], 'admin')
+                audit = data_path('audit.jsonl').read_text()
+                for secret in [payload['password'], payload['setup_key'], *result['recovery_codes'], login['access_token']]:
+                    self.assertNotIn(secret, audit)
+            finally:
+                server.shutdown()
+                server.server_close()
+                worker.join(timeout=5)
+
+
 class BetaLoginHTTPTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -200,6 +293,32 @@ class BetaLoginHTTPTests(unittest.TestCase):
 
     def test_multi_tenant_provisioning_is_blocked(self):
         self.assertEqual(self.request('/v1/saas/tenants/provision', {}, self.login())[0], 503)
+
+    def test_browser_password_change_and_recovery(self):
+        self.store.create_user('browser-reader', 'original browser password', 'reader')
+        token = self.login('browser-reader', 'original browser password')
+        status, changed = self.request('/api/auth/change-password', {
+            'current_password': 'original browser password', 'password': 'changed browser password'}, token)
+        self.assertEqual(status, 200)
+        self.assertEqual(self.request('/api/auth/me', token=token)[0], 401)
+        status, recovered = self.request('/api/auth/recover', {
+            'username': 'browser-reader', 'recovery_code': changed['recovery_codes'][0],
+            'password': 'recovered browser password'})
+        self.assertEqual(status, 200)
+        self.assertEqual(len(recovered['recovery_codes']), 8)
+        self.assertEqual(self.request('/api/state', token=self.login('browser-reader', 'recovered browser password'))[0], 403)
+
+    def test_setup_is_disabled_without_owner_key(self):
+        status, config = self.request('/api/auth/config')
+        self.assertEqual(status, 200)
+        self.assertFalse(config['setup_available'])
+        self.assertEqual(self.request('/api/auth/setup', {
+            'email': 'visitor@example.com', 'password': 'a visitor password', 'setup_key': 'anything'})[0], 400)
+
+    def test_api_key_cannot_change_an_account_password(self):
+        status, _ = self.request('/api/auth/change-password', {
+            'current_password': 'anything', 'password': 'a replacement password'}, 'test-service-key-' + 'a' * 40)
+        self.assertEqual(status, 403)
 
     def test_audit_log_excludes_credentials(self):
         token = self.login()

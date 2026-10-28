@@ -16,6 +16,7 @@ values = {
     "OMNIGENESIS_OPERATOR_API_KEY": secrets.token_urlsafe(48),
     "OMNIGENESIS_READONLY_API_KEY": secrets.token_urlsafe(48),
     "OMNIGENESIS_JWT_SECRET": secrets.token_urlsafe(48),
+    "OMNIGENESIS_ACCOUNT_SETUP_KEY": secrets.token_urlsafe(48),
 }
 Path(".env").write_text("".join(f"{key}={value}\n" for key, value in values.items()), encoding="utf-8")
 Path(".env").chmod(0o600)

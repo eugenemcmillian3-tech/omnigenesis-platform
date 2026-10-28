@@ -19,10 +19,11 @@ def dashboard_context():
     const events = {};
     const noop = () => {};
     const canvas = new Proxy({createLinearGradient:()=>({addColorStop:noop}),createRadialGradient:()=>({addColorStop:noop}),measureText:()=>({width:10})},{get:(o,k)=>k in o?o[k]:noop,set:(o,k,v)=>(o[k]=v,true)});
-    function element(seed={}) {return Object.assign({value:'',textContent:'',innerHTML:'',children:[],options:[],selectedOptions:[{dataset:{}}],dataset:{},style:{},classList:{add:noop,remove:noop,toggle:noop,contains:()=>false},
-    addEventListener:noop, appendChild(x){this.children.push(x);return x}, prepend:noop,append:noop,replaceChildren:noop,removeChild:noop,setAttribute:noop,getAttribute:()=>'',querySelectorAll:()=>[],querySelector:()=>element(),getContext:()=>canvas,getBoundingClientRect:()=>({width:640,height:400,left:0,top:0}),click:noop,select:noop,width:640,height:400,scrollHeight:0},seed)}
+    function element(seed={}) {return Object.assign({value:'',textContent:'',innerHTML:'',children:[],handlers:{},options:[],selectedOptions:[{dataset:{}}],dataset:{},style:{},classList:{add:noop,remove:noop,toggle:noop,contains:()=>false},
+    addEventListener(name,cb){this.handlers[name]=cb}, appendChild(x){this.children.push(x);return x}, prepend(...items){this.children.unshift(...items)},append(...items){this.children.push(...items)},replaceChildren:noop,removeChild:noop,setAttribute:noop,getAttribute:()=>'',querySelectorAll:()=>[],querySelector:()=>element(),getContext:()=>canvas,getBoundingClientRect:()=>({width:640,height:400,left:0,top:0}),click:noop,select:noop,width:640,height:400,scrollHeight:0},seed)}
+    function descendants(node){return [node,...(node.children||[]).flatMap(descendants)]}
     const elements=Object.fromEntries(Object.entries(elementSeeds).map(([id,seed])=>[id,element(seed)]));
-    const document={getElementById:id=>elements[id]||null,createElement:()=>element(),querySelectorAll:()=>[],querySelector:()=>element(),body:element(),execCommand:noop};
+    const document={getElementById:id=>elements[id]||descendants(document.body).find(n=>n.id===id)||null,createElement:tag=>element({tagName:tag.toUpperCase()}),querySelectorAll:()=>[],querySelector:()=>element(),body:element(),execCommand:noop};
     const window={location:{protocol:'http:',hostname:'localhost',origin:'http://localhost:8080'},addEventListener:(name,cb)=>events[name]=cb,fetch:async()=>({ok:true,status:200,json:async()=>({status:'ok'}),headers:{get:()=> 'application/json'}})};
     const localStorage={getItem:()=>null,setItem:noop};
     const navigator={clipboard:{writeText:async()=>{}}};
@@ -81,3 +82,30 @@ class DashboardRuntimeTests(unittest.TestCase):
         """)
         self.assertTrue(self.context.eval('result.ok'))
         self.assertEqual(self.context.eval('result.data.content'), 'omnigenesis_omega_quotient 1.5')
+
+    def test_setup_password_mismatch_is_caught_before_network(self):
+        self.settle("""
+          globalThis.form = descendants(document.body).find(n=>n.tagName==='FORM');
+          descendants(form).find(n=>n.name==='password').value='a sufficiently long password';
+          descendants(form).find(n=>n.name==='confirm_password').value='a different long password';
+          globalThis.requests=0;
+          window.fetch=async()=>{requests++; throw new Error('Should not submit')};
+          form.handlers.submit({preventDefault:()=>{}});
+        """)
+        self.assertEqual(self.context.eval('requests'), 0)
+        self.assertIn("don't match", self.context.eval("document.getElementById('platform-connection-status').textContent"))
+
+    def test_setup_displays_recovery_codes_and_clears_secrets(self):
+        self.settle("""
+          globalThis.form=descendants(document.body).find(n=>n.tagName==='FORM');
+          for(const n of descendants(form)){
+            if(n.name==='email')n.value='Owner@Example.com';
+            if(n.name==='setup_key')n.value='one-time-key';
+            if(n.name==='password'||n.name==='confirm_password')n.value='a sufficiently long password';
+          }
+          window.fetch=async(url,opts)=>({ok:true,status:200,headers:{get:()=> 'application/json'},
+            json:async()=>url.endsWith('/api/health')?{status:'ok'}:{username:'owner@example.com',recovery_codes:['secret-recovery-code']}});
+          form.handlers.submit({preventDefault:()=>{}});
+        """)
+        self.assertTrue(self.context.eval("descendants(document.body).some(n=>n.tagName==='PRE'&&n.textContent.includes('secret-recovery-code')&&!n.hidden)"))
+        self.assertTrue(self.context.eval("descendants(form).filter(n=>n.tagName==='INPUT').every(n=>n.value==='')"))

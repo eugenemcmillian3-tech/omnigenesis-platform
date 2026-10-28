@@ -7403,6 +7403,7 @@ def create_production_http_server(
         raise RuntimeError("API credentials must be unique across roles")
 
     identities = identity_store or IdentityStore()
+    owner_setup_key = os.environ.get("OMNIGENESIS_ACCOUNT_SETUP_KEY", "")
     limiter = RateLimiter()
     private_beta = os.environ.get("OMNIGENESIS_PRIVATE_BETA", "0") == "1"
     reader_get_routes = {
@@ -7493,6 +7494,10 @@ def create_production_http_server(
     ]
 
     ALL_ROUTES = [
+        "GET  /api/auth/config                     -> Browser account setup availability",
+        "POST /api/auth/setup                      -> One-time owner account setup",
+        "POST /api/auth/recover                    -> Reset password with a recovery code",
+        "POST /api/auth/change-password            -> Change account password and rotate recovery codes",
         "GET  /                                    -> Serve OMNIGENESIS-Ω 16-Tab Command Deck HTML UI",
         "GET  /api/health                          -> Platform health, meta-weights & active counts",
         "GET  /api/state                           -> Complete unified state across all 16 tabs",
@@ -7714,6 +7719,11 @@ def create_production_http_server(
                 return False
             if (method, clean_path) in {("GET", "/api/auth/me"), ("POST", "/api/auth/logout")}:
                 return True
+            if (method, clean_path) == ("POST", "/api/auth/change-password"):
+                if identity:
+                    return True
+                self._send_json({"error": "Sign in with an account to change its password"}, status=403)
+                return False
             route_match = (method, clean_path) in registered_routes
             if method == "POST" and clean_path.startswith("/v1/models/") and clean_path.endswith("/infer"):
                 route_match = ("POST", "/v1/models/<model_id>/infer") in registered_routes
@@ -7754,7 +7764,7 @@ def create_production_http_server(
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
         def _send_json(self, payload: Dict[str, Any], status: int = 200) -> None:
-            if self.command == "POST" and status < 400 and self.path.split("?", 1)[0] not in ("/api/auth/login", "/api/auth/logout"):
+            if self.command == "POST" and status < 400 and not self.path.split("?", 1)[0].startswith("/api/auth/"):
                 with state_lock:
                     prod_db.sync_core(engine)
             audit_event(method=self.command, path=self.path.split("?", 1)[0][:200], status=status,
@@ -7797,7 +7807,7 @@ def create_production_http_server(
                 if (self.command, path) != ("GET", "/api/health") and not limiter.allow(("request", self.client_address[0]), limit=240):
                     self._send_json({"error": "Request limit exceeded; retry later"}, status=429)
                     return
-                if self.command == "POST" and path == "/api/auth/login" and not limiter.allow(("login", self.client_address[0]), limit=10):
+                if self.command == "POST" and path in {"/api/auth/login", "/api/auth/setup", "/api/auth/recover", "/api/auth/change-password"} and not limiter.allow(("login", self.client_address[0]), limit=10):
                     self._send_json({"error": "Login limit exceeded; retry later"}, status=429)
                     return
                 handler()
@@ -7817,7 +7827,7 @@ def create_production_http_server(
 
         def _do_GET(self) -> None:
             clean_path = self.path.split("?", 1)[0]
-            if clean_path not in ("/", "/dashboard", "/index.html", "/api/health") and not self._authorized(clean_path, "GET"):
+            if clean_path not in ("/", "/dashboard", "/index.html", "/api/health", "/api/auth/config") and not self._authorized(clean_path, "GET"):
                 return
             if clean_path in ("/", "/dashboard", "/index.html"):
                 candidates = [
@@ -7845,6 +7855,9 @@ def create_production_http_server(
                     self._send_json({"status": "unavailable"}, status=503)
                 else:
                     self._send_json({"status": "ok"})
+            elif clean_path == "/api/auth/config":
+                self._send_json({"setup_available": identities.setup_available(owner_setup_key),
+                                 "recovery_method": "recovery_codes", "minimum_password_length": 14})
             elif clean_path == "/api/auth/me":
                 token = self.headers.get("Authorization", "")[7:].strip()
                 self._send_json(identities.authenticate(token) or {"role": "service", "username": None})
@@ -8008,7 +8021,7 @@ def create_production_http_server(
                 self.close_connection = True
                 self._send_json({"error": "A single Content-Length and no Transfer-Encoding are required"}, status=400)
                 return
-            if clean_path != "/api/auth/login" and not self._authorized(clean_path, "POST"):
+            if clean_path not in {"/api/auth/login", "/api/auth/setup", "/api/auth/recover"} and not self._authorized(clean_path, "POST"):
                 return
             if self.headers.get_content_type() != "application/json":
                 self._send_json({"error": "Content-Type must be application/json"}, status=415)
@@ -8037,6 +8050,19 @@ def create_production_http_server(
                 self._send_json({"error": "Request JSON must be an object"}, status=400)
                 return
 
+            if clean_path in {"/api/auth/setup", "/api/auth/recover", "/api/auth/change-password"}:
+                if clean_path == "/api/auth/setup":
+                    result = identities.setup_owner(body.get("email"), body.get("password"),
+                                                    body.get("setup_key"), owner_setup_key)
+                elif clean_path == "/api/auth/recover":
+                    result = identities.recover_password(body.get("username"), body.get("recovery_code"),
+                                                        body.get("password"))
+                else:
+                    result = identities.change_password(self.authenticated_username, body.get("current_password"),
+                                                       body.get("password"))
+                self._send_json(result or {"error": "Account action could not be completed. Check your details or code."},
+                                status=200 if result else 400)
+                return
             if clean_path == "/api/auth/login":
                 result = identities.login(body.get("username", ""), body.get("password", ""))
                 self.authenticated_username = result["username"] if result else None

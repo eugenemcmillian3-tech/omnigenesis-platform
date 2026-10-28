@@ -9944,7 +9944,7 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
       keyInput.type = "password";
       keyInput.spellcheck = false;
       keyInput.setAttribute("autocapitalize", "none");
-      keyInput.placeholder = "Admin API key from Run output";
+      keyInput.placeholder = "Service API key";
       keyInput.setAttribute("aria-label", "Platform API key");
       keyInput.autocomplete = "off";
       keyInput.className = "bg-slate-950 border border-slate-700 rounded px-3 py-2";
@@ -9953,12 +9953,15 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
       connectButton.className = "bg-indigo-600 text-white rounded px-3 py-2";
       const connectionStatus = document.createElement("span");
       connectionStatus.id = "platform-connection-status";
-      connectionStatus.textContent = "Sign in with your private-beta account.";
+      connectionStatus.textContent = "Sign in with your email and password, or set up your owner account.";
+      connectionStatus.setAttribute("role", "status");
+      connectionStatus.setAttribute("aria-live", "polite");
       const usernameInput = document.createElement("input");
-      usernameInput.placeholder = "Username";
+      usernameInput.placeholder = "Email or existing username";
       usernameInput.autocomplete = "username";
       usernameInput.setAttribute("aria-label", "Username");
       usernameInput.setAttribute("autocapitalize", "none");
+      usernameInput.spellcheck = false;
       usernameInput.className = keyInput.className;
       const passwordInput = document.createElement("input");
       passwordInput.type = "password";
@@ -9983,7 +9986,12 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
             username: usernameInput.value.trim(), password: passwordInput.value
           });
           passwordInput.value = "";
-          if (!res.ok) return;
+          if (!res.ok) {
+            connectionStatus.textContent = res.status === 401
+              ? "Email or password wasn't recognized. Try again, set up your owner account, or use a recovery code."
+              : (res.data.error || "Sign-in failed. Please retry.");
+            return;
+          }
           OmniBackendClient.sessionToken = res.data.access_token;
           document.getElementById("api-key-display").value = "";
           keyInput.value = "";
@@ -10002,6 +10010,9 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
         OmniBackendClient.sessionToken = null;
         document.getElementById("api-key-display").value = "";
         keyInput.value = "";
+        recoveryOutput.textContent = "";
+        recoveryOutput.hidden = true;
+        downloadCodes.hidden = true;
         connectionStatus.textContent = res.ok ? "Signed out." : "Local credentials cleared. Server logout could not be confirmed.";
       });
       connectButton.addEventListener("click", async () => {
@@ -10019,9 +10030,140 @@ fn ${opName}_kernel(@builtin(global_invocation_id) global_id : vec3<u32>) {
       const serviceSummary = document.createElement("summary");
       serviceSummary.textContent = "Service API key (advanced)";
       serviceAccess.append(serviceSummary, keyInput, connectButton);
-      connectionPanel.append(usernameInput, passwordInput, loginButton, logoutButton, serviceAccess, connectionStatus);
+      const accountTools = document.createElement("details");
+      const accountSummary = document.createElement("summary");
+      accountSummary.textContent = "Account setup, recovery & password";
+      accountTools.append(accountSummary);
+      const accountHelp = document.createElement("p");
+      accountHelp.textContent = "First time? Use your one-time owner setup key from Render → Environment → OMNIGENESIS_ACCOUNT_SETUP_KEY. Save the recovery codes after setup. Recovery uses those codes; no email is sent.";
+      accountTools.append(accountHelp);
+      const recoveryOutput = document.createElement("pre");
+      recoveryOutput.className = "whitespace-pre-wrap bg-slate-950 p-3 rounded text-amber-200";
+      recoveryOutput.hidden = true;
+      const downloadCodes = document.createElement("button");
+      downloadCodes.type = "button";
+      downloadCodes.textContent = "Download recovery codes";
+      downloadCodes.className = connectButton.className;
+      downloadCodes.hidden = true;
+      downloadCodes.addEventListener("click", () => {
+        const url = URL.createObjectURL(new Blob([recoveryOutput.textContent], {type: "text/plain"}));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "omnigenesis-recovery-codes.txt";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      });
+      function accountForm(title, fields, endpoint) {
+        const section = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = title;
+        const form = document.createElement("form");
+        form.className = "flex flex-wrap items-center gap-2 py-3";
+        const inputs = {};
+        for (const [name, label, type, autocomplete] of fields) {
+          const wrapper = document.createElement("label");
+          wrapper.textContent = label + " ";
+          const input = document.createElement("input");
+          input.type = type;
+          input.name = name;
+          input.autocomplete = autocomplete;
+          input.required = true;
+          input.className = keyInput.className;
+          if (type === "password") input.maxLength = 1024;
+          if (name === "password" || name === "confirm_password") input.minLength = 14;
+          input.setAttribute("autocapitalize", "none");
+          input.spellcheck = false;
+          inputs[name] = input;
+          wrapper.appendChild(input);
+          form.appendChild(wrapper);
+        }
+        const reveal = document.createElement("button");
+        reveal.type = "button";
+        reveal.textContent = "Show passwords";
+        reveal.addEventListener("click", () => {
+          const show = inputs.password.type === "password";
+          for (const name of ["password", "confirm_password", "current_password"]) {
+            if (inputs[name]) inputs[name].type = show ? "text" : "password";
+          }
+          reveal.textContent = show ? "Hide passwords" : "Show passwords";
+        });
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.className = connectButton.className;
+        submit.textContent = title;
+        form.append(reveal, submit);
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          if (inputs.password.value !== inputs.confirm_password.value) {
+            connectionStatus.textContent = "The two passwords don't match. Use Show passwords to check them.";
+            return;
+          }
+          if (inputs.password.value.length < 14) {
+            connectionStatus.textContent = "Use a password with at least 14 characters.";
+            return;
+          }
+          submit.disabled = true;
+          try {
+            if (!await OmniBackendClient.probeServer()) {
+              connectionStatus.textContent = "Server unavailable. Please retry.";
+              return;
+            }
+            const payload = {};
+            for (const [name, input] of Object.entries(inputs)) {
+              if (name !== "confirm_password") payload[name] = input.value;
+            }
+            if (payload.email) payload.email = payload.email.trim().toLowerCase();
+            if (payload.username) payload.username = payload.username.trim();
+            const response = await OmniBackendClient.request("POST", endpoint, payload);
+            if (!response.ok) {
+              connectionStatus.textContent = response.data.error || "Account action failed. Please retry.";
+              return;
+            }
+            usernameInput.value = response.data.username;
+            passwordInput.value = "";
+            OmniBackendClient.sessionToken = null;
+            document.getElementById("api-key-display").value = "";
+            keyInput.value = "";
+            recoveryOutput.textContent = "OMNIGENESIS recovery codes for " + response.data.username
+              + "\nKeep these in a password manager. Recovery replaces ALL previous codes.\n\n"
+              + response.data.recovery_codes.join("\n");
+            recoveryOutput.hidden = false;
+            downloadCodes.hidden = false;
+            accountTools.open = true;
+            connectionStatus.textContent = "Account saved. Download your recovery codes now, then sign in with your new password.";
+            for (const input of Object.values(inputs)) input.value = "";
+            section.open = false;
+            if (endpoint === "/api/auth/setup") section.hidden = true;
+          } finally { submit.disabled = false; }
+        });
+        section.append(summary, form);
+        accountTools.appendChild(section);
+        return section;
+      }
+      const passwordFields = [["password", "New password (14+ characters)", "password", "new-password"],
+                              ["confirm_password", "Confirm new password", "password", "new-password"]];
+      const setupSection = accountForm("Set up owner account", [
+        ["email", "Email", "email", "email"], ["setup_key", "One-time owner setup key", "password", "off"],
+        ...passwordFields], "/api/auth/setup");
+      setupSection.hidden = true;
+      accountForm("Recover account", [["username", "Email or username", "text", "username"],
+        ["recovery_code", "Recovery code", "password", "off"], ...passwordFields], "/api/auth/recover");
+      accountForm("Change password (sign in first)", [["current_password", "Current password", "password", "current-password"],
+        ...passwordFields], "/api/auth/change-password");
+      accountTools.append(recoveryOutput, downloadCodes);
+      connectionPanel.append(usernameInput, passwordInput, loginButton, logoutButton, accountTools, serviceAccess, connectionStatus);
       document.body.prepend(connectionPanel);
-      OmniBackendClient.probeServer();
+      OmniBackendClient.probeServer().then(async online => {
+        if (!online) return;
+        const response = await OmniBackendClient.request("GET", "/api/auth/config");
+        if (response.ok && response.data.setup_available) {
+          setupSection.hidden = false;
+          setupSection.open = true;
+          accountTools.open = true;
+        }
+      });
       document.getElementById("api-key-display")?.addEventListener("change", () => {
         OmniBackendClient.probeServer();
       });

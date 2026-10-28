@@ -6,6 +6,9 @@ blocked when `OMNIGENESIS_PRIVATE_BETA=1`; do not disable this flag for customer
 
 ## Local startup and login
 
+For browser-based email/password setup and recovery without SSH, see
+[Browser account setup](BROWSER_AUTH.md). Existing username accounts remain valid.
+
 Run `bash .derle/run.sh` (or the IDE Run button). It installs the Python dependencies,
 non-destructively copies legacy databases from `/tmp` when no durable copy exists,
 and creates the initial admin account only if the account database is empty.
@@ -22,6 +25,8 @@ Passwords must contain at least 14 characters. Login sessions expire after one h
 sign-out, password changes, and account disabling revoke sessions. Session tokens stay
 in page memory and are sent as bearer credentials. Reloading the page requires login.
 There is no public registration, password-reset email, OIDC provider, or MFA yet.
+Saved recovery codes support browser password recovery; signed-in accounts can
+change their passwords and generate replacement codes in the account panel.
 Service API keys remain available for SDKs and offline administration; guard them as secrets.
 
 Create individual accounts and assign only the permissions needed:

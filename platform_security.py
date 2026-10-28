@@ -77,6 +77,10 @@ class IdentityStore:
                 role TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS sessions (
                 token_hash TEXT PRIMARY KEY, username TEXT NOT NULL, expires_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS recovery_codes (
+                code_hash TEXT PRIMARY KEY, username TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS auth_settings (
+                name TEXT PRIMARY KEY, value TEXT NOT NULL);
         ''')
         if self.path != ':memory:':
             Path(self.path).chmod(0o600)
@@ -115,9 +119,16 @@ class IdentityStore:
     def login(self, username, password):
         if not isinstance(username, str) or not isinstance(password, str) or len(username) > 80 or len(password) > 1024:
             return None
+        original_username = username
+        if '@' in username:
+            username = username.strip().lower()
         with self.lock:
             row = self.connection.execute('SELECT salt, password_hash, role, disabled FROM users WHERE username=?',
                                           (username,)).fetchone()
+            if not row and original_username != username:
+                username = original_username
+                row = self.connection.execute('SELECT salt, password_hash, role, disabled FROM users WHERE username=?',
+                                              (username,)).fetchone()
             salt = bytes.fromhex(row[0]) if row else self.dummy_salt
             candidate = self.password_hash(password, salt)
             if not row or not hmac.compare_digest(candidate, row[1]) or row[3]:
@@ -130,6 +141,82 @@ class IdentityStore:
                                         (hashlib.sha256(token.encode()).hexdigest(), username, expires_at))
             return {'access_token': token, 'token_type': 'Bearer', 'expires_in': self.SESSION_TTL,
                     'username': username, 'role': row[2]}
+
+    def setup_available(self, setup_key):
+        with self.lock:
+            return len(setup_key) >= 32 and not self.connection.execute(
+                "SELECT 1 FROM auth_settings WHERE name='owner_setup_complete'").fetchone()
+
+    def _new_recovery_codes(self, username):
+        """Call inside a transaction. Only digests persist; plaintext is returned once."""
+        self.connection.execute('DELETE FROM recovery_codes WHERE username=?', (username,))
+        codes = ['-'.join(secrets.token_hex(4) for _ in range(4)) for _ in range(8)]
+        self.connection.executemany('INSERT INTO recovery_codes VALUES (?, ?)',
+            [(hashlib.sha256(code.encode()).hexdigest(), username) for code in codes])
+        return codes
+
+    def setup_owner(self, email, password, supplied_key, setup_key):
+        if not isinstance(supplied_key, str) or len(supplied_key) > 512 or len(setup_key) < 32 or not hmac.compare_digest(
+                hashlib.sha256(supplied_key.encode()).digest(), hashlib.sha256(setup_key.encode()).digest()):
+            return None
+        email = email.strip().lower() if isinstance(email, str) else ''
+        if len(email) > 80 or not re.fullmatch(r'[a-z0-9][a-z0-9._%+\-]*@[a-z0-9]+(?:[.\-][a-z0-9]+)*\.[a-z]{2,63}', email):
+            raise ValueError('Enter a valid email address of at most 80 characters')
+        if not isinstance(password, str) or not 14 <= len(password) <= 1024:
+            raise ValueError('Password must contain 14–1024 characters')
+        salt = secrets.token_bytes(16)
+        digest = self.password_hash(password, salt)
+        with self.lock, self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            if not self.setup_available(setup_key):
+                return None
+            if self.connection.execute('SELECT 1 FROM users WHERE username=?', (email,)).fetchone():
+                raise ValueError('Account already exists; sign in or use a recovery code')
+            self.connection.execute('INSERT INTO users VALUES (?, ?, ?, ?, 0)',
+                                    (email, salt.hex(), digest, 'admin'))
+            codes = self._new_recovery_codes(email)
+            self.connection.execute("INSERT INTO auth_settings VALUES ('owner_setup_complete', '1')")
+        return {'username': email, 'recovery_codes': codes}
+
+    def change_password(self, username, current_password, new_password):
+        if not isinstance(current_password, str) or len(current_password) > 1024:
+            return None
+        if not isinstance(new_password, str) or not 14 <= len(new_password) <= 1024:
+            raise ValueError('Password must contain 14–1024 characters')
+        with self.lock, self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            row = self.connection.execute('SELECT salt,password_hash,disabled FROM users WHERE username=?', (username,)).fetchone()
+            candidate = self.password_hash(current_password, bytes.fromhex(row[0]) if row else self.dummy_salt)
+            if not row or row[2] or not hmac.compare_digest(candidate, row[1]):
+                return None
+            salt = secrets.token_bytes(16)
+            self.connection.execute('UPDATE users SET salt=?,password_hash=? WHERE username=?',
+                                    (salt.hex(), self.password_hash(new_password, salt), username))
+            self.connection.execute('DELETE FROM sessions WHERE username=?', (username,))
+            codes = self._new_recovery_codes(username)
+        return {'username': username, 'recovery_codes': codes}
+
+    def recover_password(self, username, recovery_code, new_password):
+        if not isinstance(username, str) or len(username) > 80 or not isinstance(recovery_code, str) or len(recovery_code) > 100:
+            return None
+        if not isinstance(new_password, str) or not 14 <= len(new_password) <= 1024:
+            raise ValueError('Password must contain 14–1024 characters')
+        username = username.strip().lower() if '@' in username else username.strip()
+        code_hash = hashlib.sha256(recovery_code.strip().lower().encode()).hexdigest()
+        salt = secrets.token_bytes(16)
+        digest = self.password_hash(new_password, salt)
+        with self.lock, self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            row = self.connection.execute('''SELECT u.disabled FROM recovery_codes r
+                JOIN users u ON u.username=r.username WHERE r.code_hash=? AND r.username=?''',
+                (code_hash, username)).fetchone()
+            if not row or row[0]:
+                return None
+            self.connection.execute('UPDATE users SET salt=?,password_hash=? WHERE username=?',
+                                    (salt.hex(), digest, username))
+            self.connection.execute('DELETE FROM sessions WHERE username=?', (username,))
+            codes = self._new_recovery_codes(username)
+        return {'username': username, 'recovery_codes': codes}
 
     def authenticate(self, token):
         if not token or len(token) > 512:
@@ -156,6 +243,7 @@ class IdentityStore:
             if not result.rowcount:
                 raise ValueError('User not found')
             self.connection.execute('DELETE FROM sessions WHERE username=?', (username,))
+            self.connection.execute('DELETE FROM recovery_codes WHERE username=?', (username,))
         bootstrap = data_path('bootstrap-admin.txt')
         if username == 'admin' and bootstrap.exists():
             bootstrap.unlink()

@@ -32,3 +32,5 @@ services:
         generateValue: true
       - key: OMNIGENESIS_JWT_SECRET
         generateValue: true
+      - key: OMNIGENESIS_ACCOUNT_SETUP_KEY
+        generateValue: true
