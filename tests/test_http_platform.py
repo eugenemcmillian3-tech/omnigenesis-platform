@@ -3,6 +3,7 @@ import json
 import threading
 import os
 import tempfile
+import socket
 from unittest.mock import patch
 import unittest
 import urllib.error
@@ -53,6 +54,32 @@ class PlatformHTTPTests(unittest.TestCase):
             self.assertEqual(json.load(response), {'status': 'ok'})
         with self.request('/', role=None) as response:
             self.assertIn(b'platform-connection-status', response.read())
+
+    def test_readiness_fails_when_storage_is_unavailable(self):
+        with patch.object(self.server, 'check_readiness', side_effect=OSError('disk unavailable')):
+            with self.request('/api/health', role=None) as response:
+                self.assertEqual(response.status, 503)
+                self.assertEqual(json.load(response), {'status': 'unavailable'})
+        with self.request('/api/health', role=None) as response:
+            self.assertEqual(response.status, 200)
+
+    def test_health_probe_is_not_blocked_by_request_throttle(self):
+        with patch('platform_security.RateLimiter.allow', return_value=False):
+            with self.request('/api/health', role=None) as response:
+                self.assertEqual(response.status, 200)
+            with self.request('/api/routes') as response:
+                self.assertEqual(response.status, 429)
+
+    def test_ambiguous_http_framing_is_rejected(self):
+        for framing in (b'Content-Length: 2\r\nContent-Length: 2\r\n',
+                        b'Content-Length: 2\r\nTransfer-Encoding: chunked\r\n',
+                        b'Content-Length: +2\r\n',
+                        b'Transfer-Encoding: chunked\r\n'):
+            with self.subTest(framing=framing):
+                with socket.create_connection(self.server.server_address, timeout=5) as connection:
+                    connection.sendall(b'POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\n'
+                                       b'Content-Type: application/json\r\n' + framing + b'\r\n{}')
+                    self.assertIn(b' 400 ', connection.recv(4096).split(b'\r\n')[0])
 
     def test_state_requires_authentication(self):
         with self.request('/api/state', role=None) as response:

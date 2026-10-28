@@ -3,7 +3,9 @@ WORKDIR /opt/omnicloud
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev nodejs && rm -rf /var/lib/apt/lists/*
 COPY . /opt/omnicloud/
 RUN python3 -m pip install --no-cache-dir -r requirements.lock \
-    && useradd --system --create-home --home-dir /opt/omnicloud/app omni \
+    && useradd --system --create-home --home-dir /opt/omnicloud/app --shell /bin/bash omni \
+    && mkdir -p /opt/omnicloud/app/.ssh \
+    && chmod 0700 /opt/omnicloud/app/.ssh \
     && mkdir -p /var/lib/omnigenesis \
     && chown -R omni:omni /opt/omnicloud /var/lib/omnigenesis
 USER omni

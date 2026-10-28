@@ -7793,7 +7793,8 @@ def create_production_http_server(
         def _handle_request(self, handler) -> None:
             try:
                 path = self.path.split("?", 1)[0]
-                if not limiter.allow(("request", self.client_address[0]), limit=240):
+                # Never let ordinary proxy traffic exhaust the readiness probe budget.
+                if (self.command, path) != ("GET", "/api/health") and not limiter.allow(("request", self.client_address[0]), limit=240):
                     self._send_json({"error": "Request limit exceeded; retry later"}, status=429)
                     return
                 if self.command == "POST" and path == "/api/auth/login" and not limiter.allow(("login", self.client_address[0]), limit=10):
@@ -7836,7 +7837,14 @@ def create_production_http_server(
                         return
                 self._send_json({"status": "ONLINE", "routes": ALL_ROUTES})
             elif clean_path == "/api/health":
-                self._send_json({"status": "ok"})
+                try:
+                    if self.server.stop_event.is_set():
+                        raise RuntimeError("Service is draining")
+                    self.server.check_readiness()
+                except Exception:
+                    self._send_json({"status": "unavailable"}, status=503)
+                else:
+                    self._send_json({"status": "ok"})
             elif clean_path == "/api/auth/me":
                 token = self.headers.get("Authorization", "")[7:].strip()
                 self._send_json(identities.authenticate(token) or {"role": "service", "username": None})
@@ -7994,6 +8002,12 @@ def create_production_http_server(
         def _do_POST(self) -> None:
             self.connection.settimeout(10)
             clean_path = self.path.split("?", 1)[0]
+            # Reject ambiguous framing before authentication or reading any body.
+            lengths = self.headers.get_all("Content-Length", [])
+            if self.headers.get_all("Transfer-Encoding") or len(lengths) != 1 or not re.fullmatch(r"[0-9]+", lengths[0]):
+                self.close_connection = True
+                self._send_json({"error": "A single Content-Length and no Transfer-Encoding are required"}, status=400)
+                return
             if clean_path != "/api/auth/login" and not self._authorized(clean_path, "POST"):
                 return
             if self.headers.get_content_type() != "application/json":
@@ -8011,6 +8025,9 @@ def create_production_http_server(
                 self._send_json({"error": "Request body exceeds 1 MiB limit"}, status=413)
                 return
             raw_bytes = self.rfile.read(length) if length > 0 else b"{}"
+            if length and len(raw_bytes) != length:
+                self._send_json({"error": "Incomplete request body"}, status=400)
+                return
             try:
                 body = json.loads(raw_bytes.decode("utf-8") or "{}")
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -8622,6 +8639,8 @@ def create_production_http_server(
         def __init__(self, *args, **kwargs):
             self.request_slots = threading.BoundedSemaphore(16)
             self.stop_event = threading.Event()
+            self.active_requests = 0
+            self.request_condition = threading.Condition()
             super().__init__(*args, **kwargs)
 
         def process_request(self, request, client_address):
@@ -8632,8 +8651,13 @@ def create_production_http_server(
                     self.shutdown_request(request)
                 return
             try:
+                with self.request_condition:
+                    self.active_requests += 1
                 super().process_request(request, client_address)
             except Exception:
+                with self.request_condition:
+                    self.active_requests -= 1
+                    self.request_condition.notify_all()
                 self.request_slots.release()
                 raise
 
@@ -8641,6 +8665,9 @@ def create_production_http_server(
             try:
                 super().process_request_thread(request, client_address)
             finally:
+                with self.request_condition:
+                    self.active_requests -= 1
+                    self.request_condition.notify_all()
                 self.request_slots.release()
 
         def shutdown(self):
@@ -8648,11 +8675,30 @@ def create_production_http_server(
             super().shutdown()
 
         def server_close(self):
+            self.stop_event.set()
             super().server_close()
-            if identity_store is None:
-                identities.close()
+            with self.request_condition:
+                drained = self.request_condition.wait_for(lambda: self.active_requests == 0, timeout=15)
+            if drained:
+                with state_lock:
+                    prod_db.sync_core(engine)
+                    prod_db.conn.close()
+                if identity_store is None:
+                    identities.close()
+            else:
+                print("Shutdown drain deadline reached; active requests remain", flush=True)
 
     server = ReusableThreadingHTTPServer((host, port), OmniAPIHandler)
+    def check_readiness():
+        import tempfile
+        with prod_db._lock:
+            prod_db.conn.execute("SELECT 1 FROM runtime_checkpoint LIMIT 1").fetchall()
+        with identities.lock:
+            identities.connection.execute("SELECT 1 FROM users LIMIT 1").fetchall()
+        with tempfile.TemporaryFile(dir=data_path('.')) as probe:
+            probe.write(b'ready')
+            probe.flush()
+    server.check_readiness = check_readiness
     actual_port = server.server_address[1]
     return server, actual_port
 
@@ -8660,17 +8706,29 @@ def create_production_http_server(
 def run_production_http_server(port: int = 8080) -> None:
     """Launch the HTTP API on the configured network interface."""
     import os
+    import signal
 
     host = os.environ.get("OMNIGENESIS_BIND_HOST", "127.0.0.1")
     server, actual_port = create_production_http_server(port=port, host=host)
+    stopping = False
+    def request_shutdown(signum, frame):
+        nonlocal stopping
+        stopping = True
+    previous_handlers = {sig: signal.signal(sig, request_shutdown)
+                         for sig in (signal.SIGTERM, signal.SIGINT)}
+    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving.start()
     print(f"OMNIGENESIS-Ω API listening on http://{host}:{actual_port}", flush=True)
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+        while serving.is_alive() and not stopping:
+            serving.join(timeout=0.2)
     finally:
-        server.stop_event.set()
+        server.shutdown()
         server.server_close()
+        serving.join(timeout=1)
+        for sig, handler in previous_handlers.items():
+            signal.signal(sig, handler)
+        print("OMNIGENESIS shutdown complete", flush=True)
 
 
 def print_step_by_step_guide() -> None:
