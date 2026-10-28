@@ -20,7 +20,8 @@ services:
       - key: OMNIGENESIS_BIND_HOST
         value: 0.0.0.0
       - key: OMNIGENESIS_DATA_DIR
-        value: /var/lib/omnigenesis
+        # Use an app-owned directory; the mounted disk root is provider-owned.
+        value: /var/lib/omnigenesis/data
       - key: OMNIGENESIS_PRIVATE_BETA
         value: "1"
       - key: OMNIGENESIS_ADMIN_API_KEY
