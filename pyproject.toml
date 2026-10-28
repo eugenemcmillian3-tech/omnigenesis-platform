@@ -12,3 +12,7 @@ dependencies = ["numpy>=1.24.0", "scipy>=1.10.0", "cryptography>=41.0.0"]
 
 [project.scripts]
 omnigenesis = "omnigenesis_sdk.cli:main"
+
+[tool.setuptools]
+packages = ["omnigenesis_sdk"]
+py-modules = ["omnigenesis_engine", "platform_security", "platform_admin"]

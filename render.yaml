@@ -1,0 +1,33 @@
+# Paid staging configuration. Review Render's plan and disk charges before creating it.
+services:
+  - type: web
+    name: omnigenesis-beta
+    runtime: docker
+    plan: standard
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: "off"
+    healthCheckPath: /api/health
+    # Keep traffic disabled until host validation and access restrictions are ready.
+    maintenanceMode:
+      enabled: true
+    disk:
+      name: omnigenesis-beta-data
+      mountPath: /var/lib/omnigenesis
+      sizeGB: 1
+    envVars:
+      - key: OMNIGENESIS_BIND_HOST
+        value: 0.0.0.0
+      - key: OMNIGENESIS_DATA_DIR
+        value: /var/lib/omnigenesis
+      - key: OMNIGENESIS_PRIVATE_BETA
+        value: "1"
+      - key: OMNIGENESIS_ADMIN_API_KEY
+        generateValue: true
+      - key: OMNIGENESIS_OPERATOR_API_KEY
+        generateValue: true
+      - key: OMNIGENESIS_READONLY_API_KEY
+        generateValue: true
+      - key: OMNIGENESIS_JWT_SECRET
+        generateValue: true

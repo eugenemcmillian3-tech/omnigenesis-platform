@@ -1,89 +1,84 @@
 # OMNIGENESIS-Ω Platform
 
-An experimental Python platform with a browser dashboard, HTTP API, server-sent events (SSE), Prometheus metrics, Python SDK, Ollama model definitions, and Hugging Face fine-tuning assets.
+This repository contains the Omnigenesis platform engine, dashboard, Python SDK, deployment configuration, model definitions, and fine-tuning assets. The current release is an experimental, single-tenant private beta.
 
-The project explores runtime operator generation, convergence workflows, and multi-agent simulations. Names such as AGI, ASI, and “5th paradigm” describe the project's concepts; they are not evidence of demonstrated general or superhuman intelligence.
+Project terms such as AGI, ASI, and “5th paradigm” describe design concepts; they do not establish demonstrated general or superhuman intelligence.
 
-## Current development status
+## Run the platform
 
-The published repository is an experimental development snapshot. Local follow-up work includes authenticated single-tenant beta access, account administration, durable storage, regression tests, and managed staging configuration. Those changes are pending publication and are not included merely by updating this README.
-
-The instructions below use files currently available in this repository. Private-beta setup instructions will accompany the corresponding code.
-
-## Local quick start
-
-Use Python 3.10 or newer. From a terminal:
+Use Python 3.10 or newer with venv support. Clone the repository first:
 
 ```bash
 git clone https://github.com/eugenemcmillian3-tech/omnigenesis-platform.git
 cd omnigenesis-platform
-python3 -m venv .venv
-. .venv/bin/activate
-python3 -m pip install --upgrade pip
+```
+
+Start the local platform with the Derle IDE **Run** button, or:
+
+```bash
+bash .derle/run.sh
+```
+
+The launcher creates a private `.env` if needed, installs NumPy, SciPy, and cryptography in `.venv`, migrates legacy temporary stores without overwriting durable files, bootstraps the admin account, and starts the authenticated single-tenant beta on port 8080. `python3 main.py` uses the same launcher.
+
+Open `http://localhost:8080/`, open the private `bootstrap-admin.txt` file identified by the launcher, and sign in with its username and password. Change the initial password with `.venv/bin/python platform_admin.py set-password admin`. Session tokens stay in page memory. Advanced service-key access remains available. The convergence controls, model API playground, model creation, and verification table use server responses. Connect also loads the server's route catalog into the API playground, including metrics and SSE. Network failures return errors instead of simulated successes. Some older specialist panels still contain local demonstrations; their output is not evidence of a live external integration.
+
+For a direct launch after setup:
+
+```bash
+set -a
+. ./.env
+set +a
+.venv/bin/python omnigenesis_engine.py --serve --port 8080
+```
+
+## Verify
+
+Native kernel checks require GCC (or Clang), C headers, and Node.js on `PATH`. In this Ubuntu environment, install them with `apt-get install gcc libc6-dev nodejs` or the corresponding Derle Components.
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python scripts/verify.py
+```
+
+The built-in suite runs 64 local checks. Additional HTTP regression tests cover authentication, malformed inputs, convergence, model inference, Prometheus metrics, continuous SSE, and route registration. Native build artifacts are stored under `build/`. These tests verify local behavior; they do not validate scientific claims, live model inference, cloud capacity, or payment integrations.
+
+## Optional Python SDK
+
+Install the package and its declared SDK dependencies with:
+
+```bash
 python3 -m pip install .
-python3 omnigenesis_engine.py --serve --port 8080
 ```
 
-Open http://localhost:8080/ in your browser. Keep this development server on a trusted local environment.
-
-For a command-line engine run:
-
-```bash
-python3 omnigenesis_engine.py --goal "Explore a convergence workflow" --cycles 4
-```
-
-In the Derle workspace, the IDE Run button reads `.derle/run.sh`. That workspace launcher belongs to the local development setup and is not currently included in the published repository.
-
-## Verification
-
-With the virtual environment activated:
-
-```bash
-python3 omnigenesis_engine.py --self-test
-```
-
-Native compilation checks require GCC or Clang with C headers, and JavaScript checks require Node.js. On Ubuntu, install these prerequisites with:
-
-```bash
-sudo apt-get update
-sudo apt-get install gcc libc6-dev nodejs
-```
-
-In Derle's proot Ubuntu environment, omit `sudo` or install the corresponding tools through Components / SDKs.
-
-Inspect the actual self-test report for the check count and failures. Local checks do not establish scientific validity, model quality, production capacity, or working external integrations.
+This installs the `omnigenesis` CLI and the declared SDK dependencies: NumPy, SciPy, and cryptography. For HTTP client calls, explicitly provide your configured service API key; the SDK’s historical default key is not a valid credential for this beta.
 
 ## Repository guide
 
 | Path | Purpose |
 | --- | --- |
 | [omnigenesis_engine.py](omnigenesis_engine.py) | Engine, HTTP API, SSE, metrics, and built-in checks |
-| [omnigenesis_dashboard.html](omnigenesis_dashboard.html) | Browser command deck served by the engine |
+| [omnigenesis_dashboard.html](omnigenesis_dashboard.html) | Browser command deck |
+| [platform_security.py](platform_security.py) | Accounts, sessions, protected storage, and signing keys |
+| [platform_admin.py](platform_admin.py) | Account, backup, migration, and key administration |
 | [omnigenesis_sdk/](omnigenesis_sdk/) | Python client and CLI |
-| [pyproject.toml](pyproject.toml) | Package metadata and Python dependencies |
-| [ollama_models/](ollama_models/) | Ollama Modelfiles and model build script |
-| [huggingface_finetune/](huggingface_finetune/) | Training scripts, example data, and export tooling |
-| [deploy/](deploy/) | Existing deployment examples |
-| [Dockerfile](Dockerfile) / [docker-compose.yml](docker-compose.yml) | Container configuration |
+| [tests/](tests/) / [scripts/verify.py](scripts/verify.py) | Regression tests and isolated verification |
+| [ollama_models/](ollama_models/) | Ollama model definitions and build script |
+| [huggingface_finetune/](huggingface_finetune/) | Training scripts, example data, and export tools |
+| [deploy/](deploy/) | Private-beta and managed-hosting runbooks |
 
-## Python SDK and CLI
+## Optional model training
 
-`python3 -m pip install .` installs the SDK, its declared dependencies (NumPy, SciPy, and cryptography), and the `omnigenesis` command.
+The Hugging Face training scripts require PyTorch, Transformers, Datasets, PEFT, TRL, Accelerate, and bitsandbytes. Follow the training script’s documented command and the library installation guidance for your hardware; 4-bit training generally requires a compatible GPU. Training also downloads large model weights and may require substantial storage.
 
-Review [the client implementation](omnigenesis_sdk/client.py) and [CLI](omnigenesis_sdk/cli.py) for supported operations.
+## Private-beta foundations and remaining production gates
 
-## Optional model workflows
+Individual accounts use scrypt password hashes and one-hour revocable sessions. The IDE Run launcher and container entrypoint enable single-tenant beta mode, blocking SaaS multi-tenant routes. Admin, operator, and reader roles retain their route restrictions. Bootstrap credentials and random per-tag signing keys are stored privately under `OMNIGENESIS_DATA_DIR` (default `~/.local/share/omnigenesis`). Databases, deployment bundles, audit logs, and core checkpoints also use that directory. Core mission, telemetry, and operators restore across restarts; some other state still needs complete recovery support.
 
-The Ollama definitions require a separate Ollama installation and the base models named in each Modelfile. Review [the build script](ollama_models/build_omni_ollama_models.sh) before running it.
+Requests have input/body limits, login throttling, a general request limit, and a cap on concurrent connections. JSON API audit events exclude bodies and credentials. Docker excludes local secrets, runs without root privileges, and Compose adds health checks and resource limits. A TLS Nginx template and account/backup administration commands are provided. See [the private-beta runbook](deploy/PRIVATE_BETA.md) for setup, recovery, key rotation, verification, and limitations.
 
-The Hugging Face scripts use additional libraries such as PyTorch, Transformers, Datasets, PEFT, TRL, Accelerate, and bitsandbytes. These training dependencies are separate from the SDK installation. Review each script's arguments and hardware requirements before downloading model weights or starting training.
+**This remains a private beta, not a public-production release.** The standard-library HTTP server still needs migration to a maintained production application server/framework. OIDC/MFA, full tenant isolation, background job isolation, comprehensive XSS/authorization review, complete state recovery, load/device testing, centralized monitoring, and independent security review remain launch gates. Payment processing, identity-provider JWT issuance, and remote terminal execution are disabled. Several specialist panels still contain local demonstrations; passing the development suite does not validate their external integrations or scientific claims.
 
-Model definitions and example training data do not establish that a trained model or hosted inference service is available.
+## Managed hosting
 
-## Deployment status and remaining work
-
-The existing container and host deployment files are development examples that need review before use. The published Dockerfile includes a placeholder payment webhook secret; it must not be treated as a production credential. Installing the SDK locally does not install dependencies inside the existing container image.
-
-Before accepting public traffic, complete authentication and authorization review, secret management, TLS, durable storage and recovery, job isolation, production application-server migration, monitoring, load testing, and an independent security review. Verify external integrations individually. Some dashboard outputs are demonstrations or local calculations.
-
-The next publication should include the private-beta code, tests, and deployment runbooks together so documented commands and available files stay aligned.
+A Render staging blueprint is provided in `render.yaml`. It uses a paid Docker service and persistent disk, generates service secrets, and starts in maintenance mode. See [the Render setup guide](deploy/RENDER.md). Creating a paid provider service and enabling user traffic are separate steps.

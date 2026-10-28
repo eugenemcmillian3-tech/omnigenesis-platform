@@ -1,8 +1,13 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 WORKDIR /opt/omnicloud
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev nodejs && rm -rf /var/lib/apt/lists/*
 COPY . /opt/omnicloud/
-ENV PORT=8080
-ENV STRIPE_WEBHOOK_SECRET=whsec_omni_prod_secret_key
+RUN python3 -m pip install --no-cache-dir -r requirements.lock \
+    && useradd --system --create-home --home-dir /opt/omnicloud/app omni \
+    && mkdir -p /var/lib/omnigenesis \
+    && chown -R omni:omni /opt/omnicloud /var/lib/omnigenesis
+USER omni
+ENV PORT=8080 OMNIGENESIS_PRIVATE_BETA=1 PYTHONUNBUFFERED=1
+ENV OMNIGENESIS_DATA_DIR=/var/lib/omnigenesis
 EXPOSE 8080
-CMD ["python3", "omnigenesis_engine.py", "--serve", "--port", "8080"]
+CMD ["bash", "deploy/start-beta.sh"]
