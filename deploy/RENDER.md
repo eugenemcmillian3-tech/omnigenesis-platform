@@ -13,11 +13,12 @@ No provider resources are created by adding these files.
    The blueprint selects `standard`; inspect current pricing before accepting it.
 3. Render builds the Dockerfile and runs `deploy/start-beta.sh`. The service binds to
    `0.0.0.0` and uses Render's injected `PORT`. Do not hard-code port 8080 in the dashboard.
-4. Confirm deployment/health checks pass. In the service shell, verify that the configured
-   non-root service user can write to `/var/lib/omnigenesis`. If disk permissions prevent
-   startup, correct ownership for the service user through the host/provider configuration;
-   retain the non-root runtime.
-5. Retrieve `/var/lib/omnigenesis/bootstrap-admin.txt` using Render's service shell.
+4. Confirm deployment/health checks pass. Render mounts the disk at `/var/lib/omnigenesis`;
+   `OMNIGENESIS_DATA_DIR` points to `/var/lib/omnigenesis/data` so the non-root service
+   user creates and protects its own directory instead of changing the disk root's
+   permissions. Verify that this directory is writable in the service shell. For an
+   existing installation, back up and migrate existing data before changing its path.
+5. Retrieve `/var/lib/omnigenesis/data/bootstrap-admin.txt` using Render's service shell.
    Change the initial password with `python3 platform_admin.py set-password admin`.
    Keep credentials out of screenshots, issue trackers, and build logs.
 6. Before disabling maintenance mode, complete the private-beta access restriction and
